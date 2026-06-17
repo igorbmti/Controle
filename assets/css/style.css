@@ -1,0 +1,647 @@
+/* =====================================================
+   Arquivo: style.css
+   Descrição: Estilos principais do sistema Controle Big TI
+   Padrão visual: Fundo preto, letras brancas, detalhes em branco/cinza
+   ===================================================== */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+html, body {
+    background-color: #000000;
+    color: #ffffff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+@media (min-width: 1024px) {
+    body {
+        zoom: .82;
+    }
+}
+
+a {
+    color: #ffffff;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+a:hover {
+    color: #cccccc;
+}
+
+/* =================== TOPO =================== */
+.topo {
+    background: linear-gradient(180deg, #0a0a0a 0%, #1a1a1a 100%);
+    border-bottom: 3px solid #ffffff;
+    padding: 15px 30px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.logo {
+    height: 50px;
+    width: auto;
+    filter: invert(1) brightness(2);
+}
+
+.logo-area h1 {
+    color: #ffffff;
+    font-size: 1.5em;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+.logo-area h1::after {
+    content: "TI";
+    color: #ffffff;
+    margin-left: 5px;
+    opacity: 0.7;
+}
+
+.menu {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.menu a {
+    color: #ffffff;
+    padding: 10px 18px;
+    border-radius: 5px;
+    font-weight: 500;
+    transition: all 0.3s;
+    border: 1px solid transparent;
+}
+
+.menu a:hover {
+    background-color: #ffffff;
+    color: #000000;
+    border-color: #ffffff;
+}
+
+.usuario-area {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    color: #ffffff;
+    font-weight: 500;
+}
+
+.btn-sair {
+    background-color: #ffffff;
+    color: #000000 !important;
+    padding: 8px 16px;
+    border-radius: 5px;
+    font-weight: 600;
+}
+
+.btn-sair:hover {
+    background-color: #cccccc;
+    color: #000000 !important;
+}
+
+/* =================== CONTEÚDO =================== */
+.conteudo {
+    flex: 1;
+    padding: 30px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+h2 {
+    color: #ffffff;
+    border-left: 5px solid #ffffff;
+    padding-left: 15px;
+    margin-bottom: 25px;
+    font-size: 1.8em;
+}
+
+h3 {
+    color: #ffffff;
+    margin: 20px 0 15px 0;
+    font-size: 1.3em;
+}
+
+h4 {
+    color: #ffffff;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+    border-bottom: 1px solid #333;
+    padding-bottom: 5px;
+}
+
+/* =================== CARDS DASHBOARD =================== */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.card {
+    background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+    border: 1px solid #2a2a2a;
+    border-left: 5px solid #ffffff;
+    border-radius: 8px;
+    padding: 25px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 20px rgba(255, 255, 255, 0.1);
+}
+
+.card .titulo {
+    color: #cccccc;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+}
+
+.card .valor {
+    color: #ffffff;
+    font-size: 2.5em;
+    font-weight: 700;
+}
+
+.card.alerta {
+    border-left-color: #ffaa00;
+}
+
+.card.alerta .valor {
+    color: #ffaa00;
+}
+
+/* =================== FORMULÁRIOS =================== */
+.form {
+    background-color: #0f0f0f;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 25px;
+    margin-bottom: 25px;
+}
+
+.form .linha {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.form .grupo {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 15px;
+}
+
+.form label {
+    color: #ffffff;
+    margin-bottom: 5px;
+    font-weight: 500;
+    font-size: 0.9em;
+}
+
+.form input,
+.form select,
+.form textarea {
+    background-color: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    color: #ffffff;
+    padding: 10px 12px;
+    border-radius: 5px;
+    font-size: 1em;
+    transition: border-color 0.2s;
+}
+
+.form input:focus,
+.form select:focus,
+.form textarea:focus {
+    outline: none;
+    border-color: #ffffff;
+}
+
+.form textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* =================== BOTÕES =================== */
+.btn {
+    background-color: #ffffff;
+    color: #000000;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+    font-weight: 600;
+    transition: background-color 0.2s, transform 0.1s;
+    display: inline-block;
+    text-align: center;
+}
+
+.btn:hover {
+    background-color: #cccccc;
+    transform: translateY(-1px);
+    color: #000000;
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-secundario {
+    background-color: #2a2a2a;
+    color: #ffffff;
+}
+
+.btn-secundario:hover {
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+.btn-perigo {
+    background-color: #555555;
+    color: #ffffff;
+}
+
+.btn-perigo:hover {
+    background-color: #777777;
+    color: #ffffff;
+}
+
+.btn-grupo {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 15px;
+}
+
+/* =================== TABELAS =================== */
+.tabela-container {
+    overflow-x: auto;
+    background-color: #0f0f0f;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.85em;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid #ffffff;
+}
+
+td {
+    padding: 12px 15px;
+    color: #ffffff;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+tr:hover {
+    background-color: #1a1a1a;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+.status {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.status-ativo { background-color: #ffffff; color: #000; }
+.status-inativo { background-color: #444444; color: #fff; }
+.status-manutencao { background-color: #888888; color: #000; }
+.status-estoque { background-color: #cccccc; color: #000; }
+
+/* =================== PAGINAÇÃO =================== */
+.paginacao {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.paginacao a,
+.paginacao span {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    padding: 8px 14px;
+    border: 1px solid #2a2a2a;
+    border-radius: 5px;
+    transition: all 0.2s;
+}
+
+.paginacao a:hover {
+    background-color: #ffffff;
+    border-color: #ffffff;
+    color: #000000;
+}
+
+.paginacao .atual {
+    background-color: #ffffff;
+    border-color: #ffffff;
+    color: #000000;
+}
+
+.paginacao .desabilitado {
+    color: #555;
+    cursor: not-allowed;
+}
+
+/* =================== ABAS =================== */
+.abas {
+    display: flex;
+    border-bottom: 2px solid #ffffff;
+    margin-bottom: 25px;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.aba {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    padding: 12px 20px;
+    cursor: pointer;
+    border: none;
+    border-radius: 5px 5px 0 0;
+    font-size: 1em;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.aba:hover {
+    background-color: #2a2a2a;
+}
+
+.aba.ativa {
+    background-color: #ffffff;
+    color: #000000;
+}
+
+.conteudo-aba {
+    display: none;
+}
+
+.conteudo-aba.ativa {
+    display: block;
+}
+
+/* =================== MENSAGENS =================== */
+.mensagem {
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    font-weight: 500;
+    animation: mensagemEntrada 0.24s ease both;
+    transition: opacity 0.28s ease, transform 0.28s ease;
+}
+
+.mensagem.ocultando {
+    opacity: 0;
+    transform: translateY(-6px);
+}
+
+@keyframes mensagemEntrada {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mensagem-sucesso {
+    background-color: #1a1a1a;
+    border-left: 5px solid #ffffff;
+    color: #ffffff;
+}
+
+.mensagem-erro {
+    background-color: #1a1a1a;
+    border-left: 5px solid #888888;
+    color: #ffffff;
+}
+
+.mensagem-info {
+    background-color: #1a1a1a;
+    border-left: 5px solid #cccccc;
+    color: #ffffff;
+}
+
+/* =================== LOGIN =================== */
+.login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%);
+    padding: 20px;
+}
+
+.login-box {
+    background: linear-gradient(180deg, #0f0f0f 0%, #1a1a1a 100%);
+    border: 1px solid #2a2a2a;
+    border-top: 5px solid #ffffff;
+    border-radius: 10px;
+    padding: 40px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 10px 40px rgba(255, 255, 255, 0.05);
+}
+
+.login-box .logo-area {
+    flex-direction: column;
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.login-box h1 {
+    color: #ffffff;
+    font-size: 1.8em;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.login-box h1::after {
+    content: "TI";
+    color: #ffffff;
+    opacity: 0.7;
+}
+
+.login-box .subtitulo {
+    text-align: center;
+    color: #999;
+    margin-bottom: 25px;
+    font-size: 0.9em;
+}
+
+.login-box .form {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+.login-box .btn {
+    width: 100%;
+    margin-top: 10px;
+}
+
+/* =================== UPLOAD =================== */
+.upload-area {
+    border: 2px dashed #ffffff;
+    border-radius: 8px;
+    padding: 40px;
+    text-align: center;
+    background-color: #0f0f0f;
+    transition: background-color 0.2s;
+    cursor: pointer;
+}
+
+.upload-area:hover {
+    background-color: #1a1a1a;
+}
+
+.upload-area input[type="file"] {
+    display: none;
+}
+
+.galeria {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.galeria-item {
+    background-color: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    overflow: hidden;
+    text-align: center;
+    padding: 10px;
+}
+
+.galeria-item img {
+    width: 100%;
+    height: 130px;
+    object-fit: cover;
+    border-radius: 5px;
+}
+
+.galeria-item .nome {
+    color: #ffffff;
+    font-size: 0.85em;
+    margin-top: 8px;
+    word-break: break-all;
+}
+
+/* =================== RODAPÉ =================== */
+.rodape {
+    background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+    border-top: 3px solid #ffffff;
+    color: #cccccc;
+    text-align: center;
+    padding: 20px;
+    margin-top: 40px;
+}
+
+.rodape p {
+    margin: 3px 0;
+    font-size: 0.9em;
+}
+
+.rodape strong {
+    color: #ffffff;
+}
+
+/* =================== TABELA DE HISTÓRICO =================== */
+.historico-item {
+    background-color: #1a1a1a;
+    border-left: 4px solid #ffffff;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.historico-item .data {
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.historico-item .descricao {
+    color: #ffffff;
+    margin-top: 5px;
+}
+
+/* =================== RESPONSIVO =================== */
+@media (max-width: 768px) {
+    .topo {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .menu {
+        justify-content: center;
+    }
+
+    .conteudo {
+        padding: 15px;
+    }
+
+    h2 {
+        font-size: 1.4em;
+    }
+
+    .card .valor {
+        font-size: 2em;
+    }
+
+    .login-box {
+        padding: 25px;
+    }
+}
+
+@media (max-width: 480px) {
+    .menu a {
+        padding: 8px 12px;
+        font-size: 0.9em;
+    }
+}

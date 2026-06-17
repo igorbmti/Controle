@@ -1,0 +1,26 @@
+{
+  "sqltools.connections": [
+    {
+      "name": "MySQL Local - Servidor",
+      "driver": "MySQL",
+      "server": "localhost",
+      "port": 3306,
+      "database": "mysql",
+      "username": "root",
+      "password": "",
+      "askForPassword": false,
+      "connectionTimeout": 30
+    },
+    {
+      "name": "Controle Big - MySQL Local",
+      "driver": "MySQL",
+      "server": "localhost",
+      "port": 3306,
+      "database": "controle_big",
+      "username": "root",
+      "password": "",
+      "askForPassword": false,
+      "connectionTimeout": 30
+    }
+  ]
+}
