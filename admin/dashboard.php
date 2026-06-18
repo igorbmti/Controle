@@ -1060,6 +1060,8 @@ $alertasSistema = $dashboardPayload['alertas'];
 $recentesPage = $dashboardPayload['recentes'];
 $recentes = $recentesPage['rows'];
 $atividades = $dashboardPayload['atividades'];
+$lojaAtualFiltro = findLojaByIds($lojas, $filters['loja_ids']);
+$ultimaSincronizacao = time();
 
 $totalTipos = $tipoResumo['total'];
 $entregasTipo = $tipoResumo['entregas'];
@@ -1702,6 +1704,22 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             padding: 16px 20px 20px;
         }
 
+        .heatmap-grid.is-animating .heatmap-tile {
+            animation: heatmapFadeIn .72s ease both;
+            animation-delay: var(--tile-delay, 0ms);
+        }
+
+        @keyframes heatmapFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         .heatmap-tile {
             min-width: 0;
             height: 96px;
@@ -1896,6 +1914,22 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             justify-self: center;
         }
 
+        .donut-canvas canvas {
+            opacity: 0;
+            animation: chartFadeIn .7s ease .08s forwards;
+        }
+
+        @keyframes chartFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(.97);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
         .chartjs-tooltip {
             position: fixed;
             z-index: 99999;
@@ -2014,10 +2048,10 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .donut-wrap {
             display: grid;
-            grid-template-columns: 166px minmax(0, 1fr);
+            grid-template-columns: 172px minmax(0, 1fr);
             align-items: center;
-            gap: 10px;
-            padding: 20px 22px;
+            gap: 12px;
+            padding: 18px 20px 20px;
         }
 
         .donut-center {
@@ -2045,7 +2079,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .type-list {
             display: grid;
-            gap: 8px;
+            gap: 9px;
             align-self: center;
         }
 
@@ -2061,6 +2095,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             border: 1px solid rgba(255, 255, 255, .07);
             border-radius: var(--radius);
             background: rgba(255, 255, 255, .035);
+            transition: border-color .2s ease, background .2s ease, transform .2s ease;
+        }
+
+        .type-row:hover {
+            border-color: rgba(255, 255, 255, .12);
+            background: rgba(255, 255, 255, .052);
+            transform: translateX(2px);
         }
 
         .type-row span {
@@ -2410,18 +2451,66 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             }
         }
 
-        .ti-signature {
+        .ops-center {
             min-height: 178px;
             display: grid;
             place-items: center;
-            color: rgba(255, 255, 255, .88);
-            font-family: "Sora", "Poppins", "Inter", "Segoe UI", Arial, sans-serif;
-            font-size: 22px;
-            font-weight: 600;
-            letter-spacing: 1px;
             text-align: center;
-            position: relative;
-            top: 14px;
+            color: rgba(255, 255, 255, .9);
+            font-family: "Sora", "Inter", "Segoe UI", Arial, sans-serif;
+            padding: 22px;
+        }
+
+        .ops-center-inner {
+            display: grid;
+            gap: 8px;
+            justify-items: center;
+        }
+
+        .ops-title {
+            color: rgba(255, 255, 255, .72);
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .ops-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #f5f8fc;
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        .ops-status::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 0 4px rgba(39, 184, 77, .13);
+        }
+
+        .ops-sync {
+            display: grid;
+            gap: 2px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        .ops-sync strong {
+            color: #fff;
+            font-size: 13px;
+        }
+
+        .ops-note {
+            color: rgba(167, 176, 192, .92);
+            font-size: 12px;
+            font-weight: 600;
         }
 
         .activity-dot {
@@ -2665,8 +2754,11 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9h.01"/><path d="M9 13h.01"/><path d="M9 17h.01"/></svg>
                         </div>
                         <div>
-                            <div class="metric-title">LOJA COM MAIOR DEMANDA</div>
-                            <?php if ((int) $lojaMaiorDemanda['total'] > 0): ?>
+                            <div class="metric-title" id="cardLojaTitle"><?php echo $lojaAtualFiltro ? 'LOJA ATUAL' : 'LOJA COM MAIOR DEMANDA'; ?></div>
+                            <?php if ($lojaAtualFiltro): ?>
+                                <div class="metric-value" data-fit-text id="cardLojaValue" title="<?php echo e($lojaAtualFiltro['nome']); ?>"><?php echo e($lojaAtualFiltro['nome']); ?></div>
+                                <div class="metric-meta" id="cardLojaMeta"></div>
+                            <?php elseif ((int) $lojaMaiorDemanda['total'] > 0): ?>
                                 <div class="metric-value" data-fit-text id="cardLojaValue" title="<?php echo e($lojaMaiorDemanda['loja']); ?>"><?php echo e($lojaMaiorDemanda['loja']); ?></div>
                                 <div class="metric-meta" id="cardLojaMeta"><?php echo e(pluralAtendimentos((int) $lojaMaiorDemanda['total'])); ?></div>
                             <?php else: ?>
@@ -2817,7 +2909,17 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                             </div>
                         </section>
 
-                        <div class="ti-signature">Manutenção TI</div>
+                        <div class="ops-center" aria-label="Centro Operacional TI">
+                            <div class="ops-center-inner">
+                                <div class="ops-title">Centro Operacional TI</div>
+                                <div class="ops-status">Sistema ativo</div>
+                                <div class="ops-sync">
+                                    <span>Última sincronização:</span>
+                                    <strong><?php echo e(date('d/m/y', $ultimaSincronizacao)); ?> &bull; <?php echo e(date('H:i', $ultimaSincronizacao)); ?></strong>
+                                </div>
+                                <div class="ops-note">Todos os serviços funcionando normalmente</div>
+                            </div>
+                        </div>
                     </div>
 
                     <div>
@@ -2829,7 +2931,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                 <div class="donut-canvas">
                                     <canvas id="tipoChart"></canvas>
                                     <div class="donut-center">
-                                        <div><strong id="tipoTotal"><?php echo (int) $totalTipos; ?></strong><span>movimentações</span></div>
+                                        <div><strong id="tipoTotal"><?php echo (int) $totalTipos; ?></strong><span>Movimentações</span></div>
                                     </div>
                                 </div>
                                 <div class="type-list">
@@ -3050,12 +3152,25 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             return value === 0 ? 'Sem movimentações' : pluralAtendimentosJs(value);
         }
 
+        let currentHeatmapRows = initialDashboard.graficoPrincipal?.lojas || [];
+
+        function getSelectedLojaName() {
+            if (!selectedLojaIds.length) return '';
+            const selected = selectedLojaIds.map(Number).filter(Boolean);
+            const row = currentHeatmapRows.find((item) => {
+                const ids = (item.ids || []).map(Number).filter(Boolean);
+                return ids.length === selected.length && selected.every((id) => ids.includes(id));
+            });
+            return row?.nome || 'Loja selecionada';
+        }
+
         function renderCards(data) {
             const loja = data.lojaMaiorDemanda || {};
             const entrega = data.setorMaiorOperacao || {};
             const troca = data.topTroca || {};
             const estoque = data.estoqueCritico || {};
 
+            const lojaTitle = document.getElementById('cardLojaTitle');
             const lojaValue = document.getElementById('cardLojaValue');
             const lojaMeta = document.getElementById('cardLojaMeta');
             const entregaValue = document.getElementById('cardEntregaValue');
@@ -3067,11 +3182,18 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             const estoqueMeta = document.getElementById('cardEstoqueMeta');
             const estoqueLink = document.getElementById('cardEstoqueLink');
             const totalLoja = Number(loja.total || 0);
+            const selectedLojaName = selectedLojaIds.length ? getSelectedLojaName() : '';
 
-            if (totalLoja > 0) {
+            if (selectedLojaName) {
+                lojaTitle.textContent = 'LOJA ATUAL';
+                lojaValue.textContent = selectedLojaName;
+                lojaMeta.textContent = '';
+            } else if (totalLoja > 0) {
+                lojaTitle.textContent = 'LOJA COM MAIOR DEMANDA';
                 lojaValue.textContent = String(loja.loja || 'Loja não informada');
                 lojaMeta.textContent = pluralAtendimentosJs(totalLoja);
             } else {
+                lojaTitle.textContent = 'LOJA COM MAIOR DEMANDA';
                 lojaValue.textContent = 'Sem atendimentos';
                 lojaMeta.textContent = '';
             }
@@ -3198,11 +3320,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         function renderMapaCalor(rows, lojaIds = selectedLojaIds) {
             const grid = document.getElementById('heatmapLojas');
             const items = rows || [];
+            currentHeatmapRows = items;
             const maxTotal = Math.max(1, ...items.map((row) => Number(row.total || 0)));
             updateDashboardScope(items, lojaIds);
 
             if (!items.length) {
                 grid.innerHTML = '<div class="heatmap-tile empty"><div><div class="heatmap-name">Sem lojas</div><div class="heatmap-total">Sem movimentações</div></div><div class="heatmap-bar"><span class="heatmap-fill" style="width:100%;"></span></div></div>';
+                grid.classList.add('is-animating');
                 return;
             }
 
@@ -3225,6 +3349,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                     </div>
                 `;
             }).join('');
+
+            grid.classList.remove('is-animating');
+            void grid.offsetWidth;
+            grid.classList.add('is-animating');
+            grid.querySelectorAll('.heatmap-tile').forEach((tile, index) => {
+                tile.style.setProperty('--tile-delay', `${Math.min(index * 55, 360)}ms`);
+            });
 
             grid.querySelectorAll('.heatmap-tile[data-loja-ids]').forEach((tile) => {
                 const selectLoja = () => {
@@ -3258,7 +3389,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                     backgroundColor: ['#27b84d', '#e50914'],
                     borderColor: '#10151c',
                     borderWidth: 4,
-                    hoverOffset: 2
+                    hoverOffset: 7
                 }]
             },
             options: {
@@ -3268,7 +3399,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 animation: {
                     animateRotate: true,
                     animateScale: true,
-                    duration: 700,
+                    duration: 850,
                     easing: 'easeOutQuart'
                 },
                 plugins: {
@@ -3460,17 +3591,25 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             refreshActivityRevealRows();
         }
 
-        let atividadesRevealDone = false;
+        let atividadesInView = false;
 
-        function refreshActivityRevealRows() {
+        function replayActivityReveal(list) {
+            list.classList.remove('is-visible');
+            void list.offsetWidth;
+            requestAnimationFrame(() => {
+                list.classList.add('is-visible');
+            });
+        }
+
+        function refreshActivityRevealRows({ replayIfVisible = true } = {}) {
             const list = document.getElementById('atividadesList');
             if (!list) return;
             list.classList.add('activity-reveal');
             list.querySelectorAll('.activity-row').forEach((row, index) => {
                 row.style.setProperty('--activity-delay', `${index * 120}ms`);
             });
-            if (atividadesRevealDone) {
-                list.classList.add('is-visible');
+            if (atividadesInView && replayIfVisible) {
+                replayActivityReveal(list);
             }
         }
 
@@ -3481,8 +3620,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
             const target = list.closest('.recent-panel') || list;
             const reveal = () => {
-                atividadesRevealDone = true;
-                list.classList.add('is-visible');
+                atividadesInView = true;
+                replayActivityReveal(list);
             };
 
             if (!('IntersectionObserver' in window)) {
@@ -3491,11 +3630,15 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             }
 
             const observer = new IntersectionObserver((entries) => {
-                if (entries.some((entry) => entry.isIntersecting)) {
-                    reveal();
-                    observer.disconnect();
-                }
-            }, { threshold: 0.24, rootMargin: '0px 0px -8% 0px' });
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting && entry.intersectionRatio >= 0.24 && !atividadesInView) {
+                        reveal();
+                    } else if (!entry.isIntersecting && atividadesInView) {
+                        atividadesInView = false;
+                        list.classList.remove('is-visible');
+                    }
+                });
+            }, { threshold: [0, 0.24], rootMargin: '0px 0px -8% 0px' });
 
             observer.observe(target);
         }
@@ -3584,8 +3727,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             });
             const data = await response.json();
-            renderCards(data.cards);
             renderPrincipalChart(data.graficoPrincipal);
+            renderCards(data.cards);
             renderTipo(data.tipo);
             renderProdutosRanking(data.produtosRanking);
             renderAlertas(data.alertas);
