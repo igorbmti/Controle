@@ -146,7 +146,7 @@ if ($busca !== '') {
     $params[':busca'] = '%' . $busca . '%';
 }
 
-if ($somenteCritico) {
+if ($somenteCritico && $busca === '') {
     $whereParts[] = 'e.quantidade <= :critico';
     $params[':critico'] = 3;
 }
@@ -182,6 +182,37 @@ $estoques = $stmt->fetchAll();
 
 adminPageStart('Controle de Estoque');
 ?>
+<style>
+    .stock-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 16px 18px;
+        border-bottom: 1px solid rgba(255, 255, 255, .08);
+    }
+    .stock-summary strong { display: block; font-size: 15px; }
+    .stock-summary span { color: var(--muted); font-size: 13px; }
+    .stock-form { grid-template-columns: minmax(260px, 1fr) minmax(120px, 180px) auto auto; align-items: end; }
+    .stock-search { grid-template-columns: minmax(260px, 1fr) auto auto; align-items: end; }
+    .stock-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .stock-status {
+        display: inline-flex;
+        min-height: 28px;
+        align-items: center;
+        padding: 0 10px;
+        border-radius: 6px;
+        background: rgba(39, 184, 77, .16);
+        color: #bdf5c9;
+        font-weight: 800;
+        font-size: 12px;
+    }
+    .stock-status.critical { background: rgba(245, 179, 1, .16); color: #ffd36a; }
+    @media (max-width: 820px) {
+        .stock-form,
+        .stock-search { grid-template-columns: 1fr; }
+    }
+</style>
 <section class="top">
     <div>
         <h1>Controle de Estoque</h1>
@@ -197,7 +228,7 @@ adminPageStart('Controle de Estoque');
     <section class="panel"><div class="empty"><?php echo e($erro); ?></div></section>
 <?php endif; ?>
 
-<form class="panel filters" method="POST">
+<form class="panel filters stock-form" method="POST">
     <input type="hidden" name="acao" value="salvar">
     <input type="hidden" name="estoque_id" value="<?php echo (int) ($editando['id'] ?? 0); ?>">
     <label>Nome do equipamento
@@ -212,7 +243,7 @@ adminPageStart('Controle de Estoque');
     <?php endif; ?>
 </form>
 
-<form class="panel filters" method="GET">
+<form class="panel filters stock-search" method="GET">
     <?php if ($somenteCritico): ?>
         <input type="hidden" name="critico" value="1">
     <?php endif; ?>
@@ -223,10 +254,17 @@ adminPageStart('Controle de Estoque');
         <input type="text" name="busca" value="<?php echo e($busca); ?>" placeholder="Nome do equipamento">
     </label>
     <button class="btn primary" type="submit">Pesquisar</button>
-    <a class="btn" href="estoque.php">Limpar</a>
+    <a class="btn" href="<?php echo $somenteCritico ? 'estoque.php?critico=1' : 'estoque.php'; ?>">Limpar</a>
 </form>
 
 <section class="panel">
+    <div class="stock-summary">
+        <div>
+            <strong><?php echo $somenteCritico && $busca === '' ? 'Itens com estoque crítico' : 'Consulta de estoque'; ?></strong>
+            <span><?php echo $busca !== '' ? 'Resultado da pesquisa em todos os equipamentos cadastrados.' : 'Estoque crítico: quantidade menor ou igual a 3 unidades.'; ?></span>
+        </div>
+        <a class="btn" href="estoque.php?critico=1">Ver críticos</a>
+    </div>
     <?php if (empty($estoques)): ?>
         <div class="empty">Nenhum equipamento encontrado.</div>
     <?php else: ?>
@@ -237,6 +275,7 @@ adminPageStart('Controle de Estoque');
                         <th>ID</th>
                         <th>Nome do equipamento</th>
                         <th>Quantidade em estoque</th>
+                        <th>Situação</th>
                         <th>Data de cadastro</th>
                         <th>Ações</th>
                     </tr>
@@ -247,14 +286,17 @@ adminPageStart('Controle de Estoque');
                             <td><?php echo (int) $row['id']; ?></td>
                             <td><?php echo e($row['nome']); ?></td>
                             <td><?php echo (int) $row['quantidade']; ?></td>
+                            <td><span class="stock-status <?php echo (int) $row['quantidade'] <= 3 ? 'critical' : ''; ?>"><?php echo (int) $row['quantidade'] <= 3 ? 'Crítico' : 'Regular'; ?></span></td>
                             <td><?php echo e(date('d/m/Y H:i', strtotime((string) $row['data_atualizacao']))); ?></td>
                             <td>
-                                <a class="btn" href="estoque.php?editar=<?php echo (int) $row['id']; ?><?php echo $busca !== '' ? '&busca=' . urlencode($busca) : ''; ?>">Editar</a>
+                                <div class="stock-actions">
+                                <a class="btn" href="estoque.php?editar=<?php echo (int) $row['id']; ?><?php echo $busca !== '' ? '&busca=' . urlencode($busca) : ''; ?><?php echo $somenteCritico ? '&critico=1' : ''; ?>">Editar</a>
                                 <form method="POST" style="display:inline;" onsubmit="return confirm('Confirmar exclusão deste item do estoque?');">
                                     <input type="hidden" name="acao" value="excluir">
                                     <input type="hidden" name="estoque_id" value="<?php echo (int) $row['id']; ?>">
                                     <button class="btn" type="submit">Excluir</button>
                                 </form>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>

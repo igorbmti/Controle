@@ -63,7 +63,8 @@ $stmt = $pdo->prepare("
         COALESCE(p.nome, '-') AS equipamento,
         COALESCE(l.nome, '-') AS loja,
         COALESCE(m.solicitante_nome, '-') AS solicitante,
-        m.status
+        m.status,
+        COALESCE(m.justificativa, '') AS justificativa
     {$baseSql}
     ORDER BY m.data_movimentacao DESC
     LIMIT :limit OFFSET :offset
@@ -83,6 +84,21 @@ $statusList = $pdo->query("SELECT DISTINCT status FROM movimentacoes WHERE statu
 
 adminPageStart('Movimentações');
 ?>
+<style>
+    .mov-filters { grid-template-columns: repeat(4, minmax(170px, 1fr)); align-items: end; }
+    .filter-actions { display: flex; gap: 10px; align-items: center; justify-content: flex-end; grid-column: 1 / -1; }
+    .mov-table table { table-layout: fixed; }
+    .mov-table th:nth-child(1), .mov-table td:nth-child(1) { width: 132px; }
+    .mov-table th:nth-child(3), .mov-table td:nth-child(3) { width: 95px; }
+    .mov-table th:nth-child(7), .mov-table td:nth-child(7) { width: 148px; }
+    .mov-table th:nth-child(8), .mov-table td:nth-child(8) { width: 76px; text-align: center; }
+    .reason-eye { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px; display: inline-grid; place-items: center; color: #fff; background: rgba(255,255,255,.035); cursor: help; position: relative; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+    .reason-eye:hover, .reason-eye:focus-visible { border-color: rgba(229,9,20,.58); background: rgba(229,9,20,.1); transform: translateY(-1px); outline: none; }
+    .reason-eye svg { width: 18px; height: 18px; }
+    .reason-eye::after { content: attr(data-reason); position: absolute; right: 0; bottom: calc(100% + 10px); width: min(320px, 70vw); padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #10151c; color: #fff; box-shadow: 0 16px 32px rgba(0,0,0,.36); font-size: 12px; line-height: 1.35; text-align: left; white-space: normal; opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity .16s ease, transform .16s ease; z-index: 20; }
+    .reason-eye:hover::after, .reason-eye:focus-visible::after { opacity: 1; transform: translateY(0); }
+    @media (max-width: 980px) { .mov-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filter-actions { justify-content: flex-start; } .mov-table table { table-layout: auto; } }
+</style>
 <section class="top">
     <div>
         <h1>Movimentações</h1>
@@ -91,7 +107,7 @@ adminPageStart('Movimentações');
     <a class="btn" href="dashboard.php">Voltar</a>
 </section>
 
-<form class="panel filters" method="GET">
+<form class="panel filters mov-filters" method="GET">
     <label>Data inicial<input type="date" name="data_inicial" value="<?php echo e($_GET['data_inicial'] ?? ''); ?>"></label>
     <label>Data final<input type="date" name="data_final" value="<?php echo e($_GET['data_final'] ?? ''); ?>"></label>
     <label>Loja
@@ -142,11 +158,13 @@ adminPageStart('Movimentações');
         </select>
     </label>
     <label>Solicitante<input type="text" name="solicitante" value="<?php echo e($_GET['solicitante'] ?? ''); ?>" placeholder="Nome"></label>
-    <button class="btn primary" type="submit">Filtrar</button>
-    <a class="btn" href="movimentacoes.php">Limpar</a>
+    <div class="filter-actions">
+        <button class="btn primary" type="submit">Filtrar</button>
+        <a class="btn" href="movimentacoes.php">Limpar</a>
+    </div>
 </form>
 
-<section class="panel">
+<section class="panel mov-table">
     <?php if (empty($movimentacoes)): ?>
         <div class="empty">Nenhuma movimentação registrada.</div>
     <?php else: ?>
@@ -161,6 +179,7 @@ adminPageStart('Movimentações');
                         <th>Loja</th>
                         <th>Solicitante</th>
                         <th>Status</th>
+                        <th>Motivo</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -173,6 +192,11 @@ adminPageStart('Movimentações');
                             <td><?php echo e($row['loja']); ?></td>
                             <td><?php echo e($row['solicitante']); ?></td>
                             <td><span class="badge"><?php echo e(normalizeStatus($row['status'])); ?></span></td>
+                            <td>
+                                <span class="reason-eye" tabindex="0" data-reason="<?php echo e($row['justificativa'] !== '' ? $row['justificativa'] : 'Motivo não informado.'); ?>" aria-label="Ver descrição do problema">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </span>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

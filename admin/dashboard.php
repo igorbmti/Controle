@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../includes/auth.php';
 
 verificarLogin('ADMIN');
@@ -183,20 +183,6 @@ function normalizeLojaNome(string $nome): ?string
 
 function lojaOrder(string $nome): int
 {
-    if (preg_match('/^Loja\s+0?(\d+)$/i', $nome, $matches)) {
-        $numero = (int) $matches[1];
-        if ($numero === 3 || $numero === 7) {
-            return 500 + $numero;
-        }
-        if ($numero === 8) {
-            return 8;
-        }
-        if ($numero === 9) {
-            return 9;
-        }
-        return $numero <= 6 ? $numero : 100 + $numero;
-    }
-
     $order = [
         'Loja 01' => 1,
         'Loja 02' => 2,
@@ -214,7 +200,12 @@ function lojaOrder(string $nome): int
 
 function fetchLojasDashboard(): array
 {
-    $rows = fetchAllSafe("SELECT DISTINCT id, nome FROM lojas ORDER BY id, nome");
+    $rows = fetchAllSafe("
+        SELECT id, nome
+        FROM lojas
+        WHERE ativo = 1
+        ORDER BY FIELD(id, 1, 2, 10, 4, 5, 6, 11, 8, 9), id, nome
+    ");
     $grouped = [];
 
     foreach ($rows as $row) {
@@ -231,7 +222,6 @@ function fetchLojasDashboard(): array
 
     return array_values($grouped);
 }
-
 function fetchUsuariosDashboard(string $perfilColumn): array
 {
     return fetchAllSafe("
@@ -1958,6 +1948,12 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             color: #dce1ea;
         }
 
+        .chartjs-tooltip.tipo-tooltip {
+            max-width: 180px;
+            font-size: 12px;
+            line-height: 1.35;
+        }
+
         .legend {
             display: flex;
             justify-content: center;
@@ -2989,7 +2985,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <section class="panel recent-panel">
                             <div class="panel-header">
                                 <h2>Atividades Recentes</h2>
-                                <a class="ghost-button" href="atividades.php">Ver todas</a>
                             </div>
                             <div class="activity-list" id="atividadesList">
                                 <?php $activityColors = ['purple', 'green', 'red']; ?>
@@ -3095,6 +3090,76 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             top = Math.min(maxTop, Math.max(minTop, top));
 
             tooltipEl.style.opacity = 1;
+            tooltipEl.style.left = `${left}px`;
+            tooltipEl.style.top = `${top}px`;
+        }
+
+        function externalTipoTooltip(context) {
+            const { chart, tooltip } = context;
+            let tooltipEl = document.getElementById('tipoChartTooltip');
+
+            if (!tooltipEl) {
+                tooltipEl = document.createElement('div');
+                tooltipEl.id = 'tipoChartTooltip';
+                tooltipEl.className = 'chartjs-tooltip tipo-tooltip';
+                document.body.appendChild(tooltipEl);
+            }
+
+            const globalTooltip = document.getElementById('chartjsTooltip');
+            if (globalTooltip) {
+                globalTooltip.style.opacity = 0;
+            }
+
+            if (tooltip.opacity === 0 || !tooltip.dataPoints?.length) {
+                tooltipEl.style.opacity = 0;
+                return;
+            }
+
+            const dataPoint = tooltip.dataPoints[0];
+            const color = tooltip.labelColors?.[0]?.backgroundColor || '#fff';
+            const value = Number(dataPoint.parsed || 0);
+            tooltipEl.innerHTML = `<strong>${dataPoint.label}</strong><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${color};margin-right:6px;"></i>${value} ${value === 1 ? 'registro' : 'registros'}</span>`;
+
+            const rect = chart.canvas.getBoundingClientRect();
+            const panelRect = chart.canvas.closest('.panel')?.getBoundingClientRect() || rect;
+            const wrapRect = chart.canvas.closest('.donut-wrap')?.getBoundingClientRect() || panelRect;
+            const typeListRect = chart.canvas.closest('.donut-wrap')?.querySelector('.type-list')?.getBoundingClientRect();
+            const arc = dataPoint.element;
+            const angle = typeof arc.startAngle === 'number' && typeof arc.endAngle === 'number'
+                ? (arc.startAngle + arc.endAngle) / 2
+                : Math.atan2(tooltip.caretY - (arc.y || rect.height / 2), tooltip.caretX - (arc.x || rect.width / 2));
+            const radius = Number(arc.outerRadius || Math.min(rect.width, rect.height) / 2);
+            const centerLeft = rect.left + Number(arc.x || rect.width / 2);
+            const centerTop = rect.top + Number(arc.y || rect.height / 2);
+            const directionX = Math.cos(angle) || 1;
+            const directionY = Math.sin(angle) || -0.35;
+            const gap = 12;
+            const anchorLeft = centerLeft + directionX * (radius + gap);
+            const anchorTop = centerTop + directionY * (radius + gap);
+
+            tooltipEl.style.opacity = 1;
+            tooltipEl.style.left = '-9999px';
+            tooltipEl.style.top = '-9999px';
+
+            const tooltipWidth = tooltipEl.offsetWidth || 150;
+            const tooltipHeight = tooltipEl.offsetHeight || 54;
+            const padding = 10;
+            const preferRight = directionX >= 0;
+            let left = preferRight ? anchorLeft + gap : anchorLeft - tooltipWidth - gap;
+            let top = anchorTop - tooltipHeight - 6;
+
+            if (preferRight && typeListRect && left + tooltipWidth > typeListRect.left - 8) {
+                left = typeListRect.left - tooltipWidth - 8;
+            }
+
+            const minLeft = Math.max(padding, panelRect.left + padding);
+            const maxLeft = Math.max(minLeft, Math.min(window.innerWidth - tooltipWidth - padding, panelRect.right - tooltipWidth - padding));
+            const minTop = Math.max(padding, wrapRect.top + padding);
+            const maxTop = Math.max(minTop, Math.min(window.innerHeight - tooltipHeight - padding, panelRect.bottom - tooltipHeight - padding));
+
+            left = Math.min(maxLeft, Math.max(minLeft, left));
+            top = Math.min(maxTop, Math.max(minTop, top));
+
             tooltipEl.style.left = `${left}px`;
             tooltipEl.style.top = `${top}px`;
         }
@@ -3380,7 +3445,9 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         function updateDashboardScope() {}
 
-        const tipoChart = new Chart(document.getElementById('tipoChart'), {
+        const tipoCanvas = document.getElementById('tipoChart');
+
+        const tipoChart = new Chart(tipoCanvas, {
             type: 'doughnut',
             data: {
                 labels: ['Entregas', 'Trocas'],
@@ -3396,6 +3463,10 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 responsive: true,
                 maintainAspectRatio: false,
                 cutout: '62%',
+                interaction: {
+                    mode: 'nearest',
+                    intersect: true
+                },
                 animation: {
                     animateRotate: true,
                     animateScale: true,
@@ -3406,7 +3477,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                     legend: { display: false },
                     tooltip: {
                         enabled: false,
-                        external: externalTooltip
+                        external: externalTipoTooltip
                     }
                 }
             }
@@ -3761,3 +3832,4 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
     </script>
 </body>
 </html>
+

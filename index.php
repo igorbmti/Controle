@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Login - Controle Big TI</title>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
-<body>
+<body class="login-page">
     <div class="login-container">
         <div class="login-box">
             <div class="logo-area">

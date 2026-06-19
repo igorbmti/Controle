@@ -14,13 +14,14 @@
 html, body {
     background-color: #000000;
     color: #ffffff;
+    height: 100%;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
 }
 
 @media (min-width: 1024px) {
-    body {
+    body:not(.login-page) {
         zoom: .82;
     }
 }
@@ -466,37 +467,48 @@ tr:last-child td {
 }
 
 /* =================== LOGIN =================== */
+body.login-page {
+    min-height: 100vh;
+    overflow-x: hidden;
+    background:
+        radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.08) 0%, rgba(16, 18, 22, 0.52) 34%, rgba(0, 0, 0, 0.96) 72%),
+        #050607;
+}
+
 .login-container {
     min-height: 100vh;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%);
-    padding: 20px;
+    background: transparent;
+    padding: 28px;
 }
 
 .login-box {
-    background: linear-gradient(180deg, #0f0f0f 0%, #1a1a1a 100%);
-    border: 1px solid #2a2a2a;
-    border-top: 5px solid #ffffff;
-    border-radius: 10px;
-    padding: 40px;
+    background: linear-gradient(180deg, rgba(22, 24, 28, 0.98) 0%, rgba(15, 16, 19, 0.98) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-top: 4px solid #ffffff;
+    border-radius: 12px;
+    padding: 44px 40px 42px;
     width: 100%;
-    max-width: 400px;
-    box-shadow: 0 10px 40px rgba(255, 255, 255, 0.05);
+    max-width: 430px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
 .login-box .logo-area {
     flex-direction: column;
     text-align: center;
-    margin-bottom: 30px;
+    margin-bottom: 28px;
 }
 
 .login-box h1 {
     color: #ffffff;
-    font-size: 1.8em;
+    font-size: 2rem;
+    line-height: 1.15;
     text-align: center;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+    letter-spacing: 0.2px;
 }
 
 .login-box h1::after {
@@ -507,20 +519,56 @@ tr:last-child td {
 
 .login-box .subtitulo {
     text-align: center;
-    color: #999;
-    margin-bottom: 25px;
-    font-size: 0.9em;
+    color: #a7b0c0;
+    margin-bottom: 28px;
+    font-size: 0.92rem;
 }
 
 .login-box .form {
     background: transparent;
     border: none;
     padding: 0;
+    margin-bottom: 0;
+}
+
+.login-box .form .grupo {
+    margin-bottom: 18px;
+}
+
+.login-box .form label {
+    font-size: 0.86rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.login-box .form input {
+    min-height: 44px;
+    background: #eaf1fb;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #0b0f14;
+    border-radius: 6px;
+    padding: 11px 13px;
+    font-size: 0.95rem;
+}
+
+.login-box .form input:focus {
+    border-color: rgba(255, 255, 255, 0.72);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
 }
 
 .login-box .btn {
     width: 100%;
-    margin-top: 10px;
+    min-height: 44px;
+    margin-top: 8px;
+    border-radius: 6px;
+    font-size: 0.95rem;
+}
+
+.login-box .mensagem {
+    margin: 0 0 22px;
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
 }
 
 /* =================== UPLOAD =================== */
@@ -635,7 +683,12 @@ tr:last-child td {
     }
 
     .login-box {
-        padding: 25px;
+        padding: 32px 24px;
+        max-width: 380px;
+    }
+
+    .login-box h1 {
+        font-size: 1.75rem;
     }
 }
 

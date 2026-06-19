@@ -234,9 +234,44 @@ adminPageStart('Usuários');
         margin: 0;
         font-size: 18px;
     }
+    .users-toolbar {
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) auto;
+        gap: 12px;
+        align-items: end;
+        padding: 16px 18px;
+    }
+    .search-box {
+        position: relative;
+        display: block;
+    }
+    .search-box input {
+        width: 100%;
+        padding-left: 42px;
+        height: 42px;
+    }
+    .search-box svg {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        width: 18px;
+        height: 18px;
+        transform: translateY(-50%);
+        color: var(--muted);
+        pointer-events: none;
+    }
+    .users-table table {
+        table-layout: fixed;
+    }
+    .users-table th:nth-child(1),
+    .users-table td:nth-child(1) { width: 70px; }
+    .users-table th:nth-child(7),
+    .users-table td:nth-child(7) { width: 260px; }
     @media (max-width: 760px) {
         .form-grid,
         .detail-grid { grid-template-columns: 1fr; }
+        .users-toolbar { grid-template-columns: 1fr; }
+        .users-table table { table-layout: auto; }
     }
 </style>
 
@@ -496,25 +531,18 @@ else:
     $usuarios = $stmt->fetchAll();
     ?>
     <section class="panel">
-        <form class="filters" method="get" action="usuarios.php">
-            <label>
-                Pesquisar
-                <input type="search" name="busca" value="<?php echo e($busca); ?>" placeholder="Nome, login ou perfil">
-            </label>
-            <label>
-                &nbsp;
-                <button class="btn primary" type="submit">Pesquisar</button>
+        <form class="users-toolbar" method="get" action="usuarios.php" id="usuariosBuscaForm">
+            <label class="search-box" aria-label="Buscar usuários">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="search" name="busca" value="<?php echo e($busca); ?>" placeholder="Buscar por nome, login ou perfil" autocomplete="off">
             </label>
             <?php if ($busca !== ''): ?>
-                <label>
-                    &nbsp;
-                    <a class="btn" href="usuarios.php">Limpar</a>
-                </label>
+                <a class="btn" href="usuarios.php">Limpar</a>
             <?php endif; ?>
         </form>
     </section>
 
-    <section class="panel">
+    <section class="panel users-table">
         <div class="table-wrap">
             <table>
                 <thead>
@@ -570,4 +598,13 @@ else:
     </section>
 <?php endif; ?>
 
+<script>
+    const usuariosBuscaForm = document.getElementById('usuariosBuscaForm');
+    const usuariosBuscaInput = usuariosBuscaForm?.querySelector('input[name="busca"]');
+    let usuariosBuscaTimer = null;
+    usuariosBuscaInput?.addEventListener('input', () => {
+        clearTimeout(usuariosBuscaTimer);
+        usuariosBuscaTimer = setTimeout(() => usuariosBuscaForm.submit(), 450);
+    });
+</script>
 <?php adminPageEnd(); ?>

@@ -136,28 +136,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'estoque') {
 }
 
 $lojas = fetchOptions($pdo, "
-    SELECT MIN(id) AS id, 'Loja 1' AS nome, 1 AS ordem FROM lojas WHERE ativo = 1 AND nome REGEXP '^Loja 0?1$'
-    UNION ALL
-    SELECT MIN(id) AS id, 'Loja 2' AS nome, 2 AS ordem FROM lojas WHERE ativo = 1 AND nome REGEXP '^Loja 0?2$'
-    UNION ALL
-    SELECT COALESCE(
-        (SELECT MAX(id) FROM lojas WHERE ativo = 1 AND nome = 'Deposito 73'),
-        (SELECT MIN(id) FROM lojas WHERE ativo = 1 AND nome LIKE '%73')
-    ) AS id, 'Loja 73' AS nome, 3 AS ordem
-    UNION ALL
-    SELECT MIN(id) AS id, 'Loja 4' AS nome, 4 AS ordem FROM lojas WHERE ativo = 1 AND nome REGEXP '^Loja 0?4$'
-    UNION ALL
-    SELECT MIN(id) AS id, 'Loja 5' AS nome, 5 AS ordem FROM lojas WHERE ativo = 1 AND nome REGEXP '^Loja 0?5$'
-    UNION ALL
-    SELECT MIN(id) AS id, 'Loja 6' AS nome, 6 AS ordem FROM lojas WHERE ativo = 1 AND nome REGEXP '^Loja 0?6$'
-    UNION ALL
-    SELECT COALESCE(
-        (SELECT MAX(id) FROM lojas WHERE ativo = 1 AND nome = 'Deposito 77'),
-        (SELECT MIN(id) FROM lojas WHERE ativo = 1 AND nome LIKE '%77')
-    ) AS id, 'Loja 77' AS nome, 7 AS ordem
-    UNION ALL
-    SELECT MIN(id) AS id, 'Loja 8' AS nome, 8 AS ordem FROM lojas WHERE ativo = 1 AND nome REGEXP '^Loja 0?8$'
-    ORDER BY ordem
+    SELECT id, nome
+    FROM lojas
+    WHERE ativo = 1
+    ORDER BY FIELD(id, 1, 2, 10, 4, 5, 6, 11, 8, 9), id, nome
 ");
 $setores = fetchOptions($pdo, 'SELECT id, nome FROM setores WHERE ativo = 1 ORDER BY nome');
 $equipamentos = fetchOptions($pdo, '
@@ -376,19 +358,22 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             --red: #e50914;
             --green: #27b84d;
             --radius: 8px;
+            --soft: #717b8b;
         }
         * { box-sizing: border-box; }
         body {
             margin: 0;
             min-height: 100vh;
             color: var(--text);
-            font-family: "Segoe UI", Arial, sans-serif;
-            background: linear-gradient(135deg, #040609 0%, #081018 52%, #05070b 100%);
+            font-family: "Inter", "Segoe UI", Arial, sans-serif;
+            background:
+                radial-gradient(circle at 70% 0%, rgba(40, 48, 62, .24), transparent 35%),
+                linear-gradient(135deg, #040609 0%, #081018 52%, #05070b 100%);
             animation: pageFadeIn .24s ease both;
             transition: opacity .22s ease, transform .22s ease;
         }
         @media (min-width: 1024px) {
-            body { zoom: .82; }
+            body { zoom: .82; min-height: 122vh; }
         }
         body.page-leaving {
             opacity: 0;
@@ -399,7 +384,7 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             to { opacity: 1; transform: translateY(0); }
         }
         a { color: inherit; text-decoration: none; }
-        .app { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 100vh; }
+        .app { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
         .sidebar {
             position: sticky;
             top: 0;
@@ -408,7 +393,11 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             background: rgba(4, 8, 13, .94);
             display: flex;
             flex-direction: column;
-            padding: 34px 18px 24px;
+            padding: 30px 22px 22px;
+        }
+        @media (min-width: 1024px) {
+            .app { min-height: 122vh; }
+            .sidebar { height: 122vh; }
         }
         .brand { display: flex; align-items: flex-start; height: 70px; font-size: 42px; font-weight: 800; line-height: 1; }
         .brand span:nth-child(2) { color: var(--red); }
@@ -416,40 +405,53 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             color: #fff; background: var(--red); width: 18px; height: 18px; border-radius: 50%;
             font-size: 15px; line-height: 17px; display: inline-flex; align-items: center; justify-content: center; margin-left: 4px;
         }
-        .nav { display: grid; gap: 12px; margin-top: 28px; }
+        .nav { display: grid; gap: 14px; margin-top: 22px; }
         .nav-item {
-            min-height: 58px; border-radius: var(--radius); display: flex; align-items: center; gap: 14px;
-            padding: 0 18px; font-size: 15px; font-weight: 700; border: 1px solid transparent;
+            min-height: 50px; border-radius: var(--radius); display: flex; align-items: center; gap: 12px;
+            padding: 0 14px; font-size: 14px; font-weight: 700; border: 1px solid transparent;
+            transition: background .2s ease, border-color .2s ease, transform .2s ease, box-shadow .2s ease;
         }
         .nav-item.active { background: linear-gradient(135deg, var(--red), #f01520); box-shadow: 0 14px 30px rgba(229, 9, 20, .24); }
-        .nav-item svg, .logout svg { width: 23px; height: 23px; flex: 0 0 auto; }
-        .sidebar-footer { margin-top: auto; display: grid; gap: 18px; padding-left: 8px; }
-        .profile { display: flex; align-items: center; gap: 12px; padding-left: 8px; }
-        .avatar { width: 42px; height: 42px; border: 2px solid #fff; border-radius: 50%; display: grid; place-items: center; }
-        .profile strong { display: block; font-size: 14px; font-weight: 700; }
-        .profile span { display: block; color: #fff; font-size: 12px; margin-top: 2px; }
-        .logout { display: inline-flex; align-items: center; gap: 10px; padding-left: 8px; font-size: 15px; font-weight: 700; }
-        .topbar { height: 78px; border-bottom: 1px solid var(--line); display: flex; justify-content: flex-end; align-items: center; padding: 0 32px; }
-        .hello { display: flex; align-items: center; gap: 16px; font-size: 18px; }
+        .nav-item:hover { background: rgba(255, 255, 255, .045); border-color: rgba(255, 255, 255, .075); transform: translateX(2px); }
+        .nav-item svg, .logout svg { width: 21px; height: 21px; flex: 0 0 auto; }
+        .sidebar-footer { margin-top: auto; border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 14px; }
+        .profile { display: flex; align-items: center; gap: 9px; }
+        .avatar { width: 32px; height: 32px; border: 1px solid rgba(255, 255, 255, .86); border-radius: 50%; display: grid; place-items: center; color: #fff; }
+        .avatar svg { width: 18px; height: 18px; }
+        .profile strong { display: block; font-size: 12px; font-weight: 700; line-height: 1.2; }
+        .profile span { display: inline-flex; align-items: center; gap: 6px; color: #dce1ea; font-size: 10.5px; margin-top: 2px; }
+        .online-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(39, 184, 77, .12); }
+        .logout { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; width: 100%; padding: 0 12px; font-size: 14px; font-weight: 700; border: 1px solid transparent; border-radius: var(--radius); transition: background .2s ease, border-color .2s ease, transform .2s ease; }
+        .logout:hover { background: rgba(255, 255, 255, .045); border-color: rgba(255, 255, 255, .075); transform: translateY(-1px); }
+        .topbar { height: 84px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding: 0 32px; background: rgba(5, 8, 12, .48); }
+        .mobile-menu { color: #fff; font-size: 14px; font-weight: 800; }
+        .hello { display: flex; align-items: center; gap: 16px; font-size: 17px; }
+        .ti-user {
+            margin-left: auto;
+            color: #f4f6fa;
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: .2px;
+        }
         .main { min-width: 0; }
-        .content { padding: 28px 36px 36px; }
-        .page-title { display: flex; align-items: center; gap: 20px; margin-bottom: 24px; }
+        .content { padding: 28px 32px 36px; }
+        .page-title { display: flex; align-items: center; gap: 18px; margin-bottom: 22px; }
         .title-icon {
-            width: 76px; height: 76px; border-radius: var(--radius);
+            width: 64px; height: 64px; border-radius: var(--radius);
             background: linear-gradient(135deg, #8d1119, #4a090e); display: grid; place-items: center;
         }
-        .title-icon svg { width: 36px; height: 36px; }
-        .page-title h1 { margin: 0 0 6px; font-size: 28px; }
-        .page-title p { margin: 0; color: #d6dbe5; font-size: 16px; }
+        .title-icon svg { width: 31px; height: 31px; }
+        .page-title h1 { margin: 0 0 5px; font-size: 26px; }
+        .page-title p { margin: 0; color: #d6dbe5; font-size: 14px; }
         .panel {
             background: linear-gradient(150deg, rgba(255,255,255,.045), transparent 40%), rgba(17,22,30,.88);
-            border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 16px; padding: 24px 26px;
+            border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 16px; padding: 20px 22px;
         }
-        .panel h2 { margin: 0 0 20px; font-size: 21px; }
-        .panel p { margin: -8px 0 22px; color: #f1f4f8; font-size: 15px; }
+        .panel h2 { margin: 0 0 14px; font-size: 18px; }
+        .panel p { margin: -4px 0 16px; color: #d6dbe5; font-size: 13px; }
         .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; align-items: end; }
-        .form-card { display: grid; gap: 24px; }
-        .form-row { display: grid; gap: 18px; align-items: end; }
+        .form-card { display: grid; gap: 18px; }
+        .form-row { display: grid; gap: 14px; align-items: end; }
         .form-row.delivery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
         .form-row.equipment { grid-template-columns: minmax(320px, 1.15fr) minmax(360px, .95fr); }
         .form-row.quantity { grid-template-columns: minmax(92px, 120px) 1fr; align-items: start; margin-top: -6px; }
@@ -457,15 +459,15 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             color: #dfe5ef;
             font-size: 14px;
             font-weight: 700;
-            margin-bottom: -10px;
+            margin-bottom: -6px;
         }
-        label { display: grid; gap: 9px; font-size: 14px; font-weight: 600; }
+        label { display: grid; gap: 7px; font-size: 13px; font-weight: 700; }
         input, select, textarea {
             width: 100%; border: 1px solid var(--line); border-radius: var(--radius); background: #10151c;
-            color: #fff; padding: 0 16px; font: inherit; font-size: 15px; outline: none;
+            color: #fff; padding: 0 14px; font: inherit; font-size: 14px; outline: none;
         }
-        input, select { height: 52px; }
-        textarea { min-height: 104px; padding: 16px 18px; resize: vertical; line-height: 1.45; }
+        input, select { height: 46px; }
+        textarea { min-height: 96px; padding: 14px 16px; resize: vertical; line-height: 1.45; }
         .type-group {
             display: grid;
             gap: 9px;
@@ -481,8 +483,8 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             gap: 12px;
         }
         .choice {
-            min-height: 52px; border: 1px solid var(--line); border-radius: var(--radius); display: flex;
-            align-items: center; justify-content: center; gap: 12px; padding: 0 16px; cursor: pointer; font-size: 15px; font-weight: 700;
+            min-height: 46px; border: 1px solid var(--line); border-radius: var(--radius); display: flex;
+            align-items: center; justify-content: center; gap: 10px; padding: 0 14px; cursor: pointer; font-size: 14px; font-weight: 700;
             background: rgba(255, 255, 255, .025);
             transition: border-color .18s ease, background .18s ease, box-shadow .18s ease, transform .18s ease;
         }
@@ -494,7 +496,7 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             transform: translateY(-1px);
         }
         .choice input { position: absolute; opacity: 0; pointer-events: none; }
-        .choice svg { width: 24px; height: 24px; }
+        .choice svg { width: 21px; height: 21px; }
         .choice.entrega svg { color: #59d02f; }
         .choice.troca svg { color: var(--red); }
         .quantity-field {
@@ -561,7 +563,7 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
         <div class="sidebar-footer">
             <div class="profile">
                 <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg></div>
-                <div><strong><?php echo e($nomeUsuario); ?></strong><span>Usuário</span></div>
+                <div><strong><?php echo e($nomeUsuario); ?></strong><span><i class="online-dot"></i>Online</span></div>
             </div>
             <a class="logout" href="../logout.php">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
@@ -571,7 +573,7 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
     </aside>
     <main class="main">
         <header class="topbar">
-            <div class="hello">Olá, <strong><?php echo e($nomeUsuario); ?></strong><div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg></div></div>
+            <div class="ti-user">TI <?php echo e($nomeUsuario); ?></div>
         </header>
         <section class="content">
             <div class="page-title">
