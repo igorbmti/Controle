@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../includes/auth.php';
 
 verificarLogin('TECNICO');
@@ -241,8 +241,20 @@ if ($detalheId > 0) {
         .empty { padding:22px; color:var(--muted); }
         .detail { padding:22px; display:grid; gap:12px; }
         .detail strong { color:#fff; }
+        .modal-backdrop { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.68); backdrop-filter:blur(8px); }
+        .modal-backdrop.open { display:flex; animation:modalFade .18s ease both; }
+        .delivery-modal { width:min(620px,100%); border:1px solid var(--line); border-radius:12px; background:linear-gradient(150deg,rgba(255,255,255,.055),transparent 42%),#10151c; box-shadow:0 24px 80px rgba(0,0,0,.55); overflow:hidden; }
+        .modal-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 20px; border-bottom:1px solid rgba(255,255,255,.08); }
+        .modal-head h2 { margin:0; font-size:18px; }
+        .modal-close { width:34px; height:34px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.03); color:#fff; cursor:pointer; font-size:20px; line-height:1; }
+        .modal-body { padding:20px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .modal-field { display:grid; gap:5px; min-width:0; }
+        .modal-field.full { grid-column:1 / -1; }
+        .modal-field span { color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
+        .modal-field strong { color:#fff; font-size:14px; line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
+        @keyframes modalFade { from{opacity:0} to{opacity:1} }
         @media (max-width:1050px) { .app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.filters{grid-template-columns:repeat(2,minmax(0,1fr))} }
-        @media (max-width:640px) { .content{padding:22px}.filters{grid-template-columns:1fr}.filter-actions{justify-content:flex-start;flex-direction:column;align-items:stretch} }
+        @media (max-width:640px) { .content{padding:22px}.filters{grid-template-columns:1fr}.filter-actions{justify-content:flex-start;flex-direction:column;align-items:stretch}.modal-body{grid-template-columns:1fr} }
     </style>
 </head>
 <body>
@@ -374,3 +386,4 @@ if ($detalheId > 0) {
 </script>
 </body>
 </html>
+

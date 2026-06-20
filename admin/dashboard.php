@@ -86,6 +86,23 @@ function columnExists(string $table, string $column): bool
     }
 }
 
+function tableExists(string $table): bool
+{
+    try {
+        $stmt = getConnection()->prepare("
+            SELECT COUNT(*)
+            FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = :table_name
+        ");
+        $stmt->execute([':table_name' => $table]);
+        return (int) $stmt->fetchColumn() > 0;
+    } catch (Throwable $e) {
+        error_log('Dashboard metadata error: ' . $e->getMessage());
+        return false;
+    }
+}
+
 function normalizeStatus(?string $status): string
 {
     $value = strtoupper(trim((string) $status));
@@ -271,6 +288,39 @@ function buildMovimentacaoWhere(array $filters, string $alias = 'm'): array
     if (!empty($filters['usuario_id'])) {
         $where[] = "{$alias}.usuario_id = :usuario_id";
         $params[':usuario_id'] = (int) $filters['usuario_id'];
+    }
+
+    return [$where ? 'WHERE ' . implode(' AND ', $where) : '', $params];
+}
+
+function buildManutencaoWhere(array $filters, string $alias = 'mt'): array
+{
+    $where = ["COALESCE({$alias}.ativo, 1) = 1"];
+    $params = [];
+
+    if (!empty($filters['data_inicial'])) {
+        $where[] = "{$alias}.data_registro >= :manutencao_data_inicial";
+        $params[':manutencao_data_inicial'] = $filters['data_inicial'] . ' 00:00:00';
+    }
+
+    if (!empty($filters['data_final'])) {
+        $where[] = "{$alias}.data_registro < :manutencao_data_final_next";
+        $params[':manutencao_data_final_next'] = date('Y-m-d 00:00:00', strtotime($filters['data_final'] . ' +1 day'));
+    }
+
+    if (!empty($filters['loja_ids'])) {
+        $placeholders = [];
+        foreach (array_values($filters['loja_ids']) as $index => $id) {
+            $key = ":manutencao_loja_id_{$index}";
+            $placeholders[] = $key;
+            $params[$key] = (int) $id;
+        }
+        $where[] = "{$alias}.id_loja IN (" . implode(', ', $placeholders) . ")";
+    }
+
+    if (!empty($filters['usuario_id'])) {
+        $where[] = "{$alias}.id_usuario = :manutencao_usuario_id";
+        $params[':manutencao_usuario_id'] = (int) $filters['usuario_id'];
     }
 
     return [$where ? 'WHERE ' . implode(' AND ', $where) : '', $params];
@@ -499,6 +549,7 @@ function summarizeTipos(array $porTipo): array
     $total = array_sum(array_map(static fn($row) => (int) $row['total'], $porTipo));
     $entregas = 0;
     $trocas = 0;
+    $manutencoes = 0;
 
     foreach ($porTipo as $tipo) {
         if (strtoupper((string) $tipo['tipo']) === 'ENTREGA') {
@@ -507,14 +558,19 @@ function summarizeTipos(array $porTipo): array
         if (strtoupper((string) $tipo['tipo']) === 'TROCA') {
             $trocas = (int) $tipo['total'];
         }
+        if (strtoupper((string) $tipo['tipo']) === 'MANUTENCAO') {
+            $manutencoes = (int) $tipo['total'];
+        }
     }
 
     return [
         'total' => $total,
         'entregas' => $entregas,
         'trocas' => $trocas,
+        'manutencoes' => $manutencoes,
         'entregasPercent' => $total > 0 ? round(($entregas / $total) * 100, 1) : 0,
         'trocasPercent' => $total > 0 ? round(($trocas / $total) * 100, 1) : 0,
+        'manutencoesPercent' => $total > 0 ? round(($manutencoes / $total) * 100, 1) : 0,
     ];
 }
 
@@ -812,6 +868,23 @@ function fetchTipoGerencial(array $filters): array
         $params
     );
 
+    if (tableExists('manutencoes')) {
+        [$manutencaoWhere, $manutencaoParams] = buildManutencaoWhere($filters);
+        $manutencoes = fetchOnePrepared(
+            "
+            SELECT COUNT(*) AS total
+            FROM manutencoes mt
+            {$manutencaoWhere}
+            ",
+            $manutencaoParams,
+            ['total' => 0]
+        );
+        $rows[] = [
+            'tipo' => 'MANUTENCAO',
+            'total' => (int) ($manutencoes['total'] ?? 0),
+        ];
+    }
+
     return summarizeTipos($rows);
 }
 
@@ -875,6 +948,35 @@ function fetchAlertasSistema(array $filters): array
         ];
     }
 
+    if (tableExists('manutencoes')) {
+        [$manutencaoWhere, $manutencaoParams] = buildManutencaoWhere($filters);
+        $manutencaoRows = fetchAllPrepared(
+            "
+            SELECT
+                COALESCE(p.nome, pi.nome, 'Item não informado') AS produto,
+                COALESCE(l.nome, '-') AS loja
+            FROM manutencoes mt
+            LEFT JOIN produtos p ON p.id = mt.id_item
+            LEFT JOIN itens i ON i.id = mt.id_item
+            LEFT JOIN produtos pi ON pi.id = i.produto_id
+            LEFT JOIN lojas l ON l.id = mt.id_loja
+            {$manutencaoWhere}
+              AND UPPER(mt.status) = 'EM_MANUTENCAO'
+            ORDER BY mt.data_registro DESC, mt.id_manutencao DESC
+            LIMIT 5
+            ",
+            $manutencaoParams
+        );
+
+        foreach ($manutencaoRows as $row) {
+            $alertas[] = [
+                'tipo' => 'manutencao',
+                'produto' => (string) $row['produto'],
+                'detalhe' => 'Em manutenção • ' . (string) $row['loja'],
+            ];
+        }
+    }
+
     return $alertas;
 }
 
@@ -923,11 +1025,33 @@ function fetchRecentesGerencial(array $filters, int $limit = 5): array
 function fetchAtividadesGerencial(array $filters, int $limit = 5): array
 {
     [$whereSql, $params] = buildMovimentacaoWhere($filters);
+    [$manutencaoWhere, $manutencaoParams] = tableExists('manutencoes')
+        ? buildManutencaoWhere($filters)
+        : ['', []];
     $params[':limit'] = $limit;
 
     try {
+        $manutencaoSql = tableExists('manutencoes')
+            ? "
+            UNION ALL
+            SELECT
+                mt.data_registro AS data_entrega,
+                COALESCE(u.nome, '-') AS usuario,
+                COALESCE(p.nome, pi.nome, '-') AS equipamento,
+                'MANUTENCAO' AS tipo
+            FROM manutencoes mt
+            LEFT JOIN usuarios u ON u.id = mt.id_usuario
+            LEFT JOIN produtos p ON p.id = mt.id_item
+            LEFT JOIN itens i ON i.id = mt.id_item
+            LEFT JOIN produtos pi ON pi.id = i.produto_id
+            {$manutencaoWhere}
+            "
+            : '';
+
         $stmt = getConnection()->prepare(
             "
+            SELECT *
+            FROM (
             SELECT
                 m.data_movimentacao AS data_entrega,
                 COALESCE(u.nome, '-') AS usuario,
@@ -937,10 +1061,13 @@ function fetchAtividadesGerencial(array $filters, int $limit = 5): array
             LEFT JOIN usuarios u ON u.id = m.usuario_id
             LEFT JOIN produtos p ON p.id = m.produto_id
             {$whereSql}
-            ORDER BY m.data_movimentacao DESC, m.id DESC
+            {$manutencaoSql}
+            ) atividades
+            ORDER BY data_entrega DESC
             LIMIT :limit
             "
         );
+        $params = array_merge($params, $manutencaoParams);
         foreach ($params as $key => $value) {
             $stmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
         }
@@ -1051,13 +1178,14 @@ $recentesPage = $dashboardPayload['recentes'];
 $recentes = $recentesPage['rows'];
 $atividades = $dashboardPayload['atividades'];
 $lojaAtualFiltro = findLojaByIds($lojas, $filters['loja_ids']);
-$ultimaSincronizacao = time();
 
 $totalTipos = $tipoResumo['total'];
 $entregasTipo = $tipoResumo['entregas'];
 $trocasTipo = $tipoResumo['trocas'];
+$manutencoesTipo = $tipoResumo['manutencoes'];
 $entregasPercent = $tipoResumo['entregasPercent'];
 $trocasPercent = $tipoResumo['trocasPercent'];
+$manutencoesPercent = $tipoResumo['manutencoesPercent'];
 
 $nomeUsuario = $_SESSION['nome'] ?? 'Administrador';
 $estoqueCriticoUrl = 'estoque.php?critico=1';
@@ -1274,6 +1402,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             display: flex;
             align-items: center;
             gap: 9px;
+            justify-content: flex-start;
         }
 
         .avatar {
@@ -1309,6 +1438,9 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             display: inline-flex;
             align-items: center;
             gap: 6px;
+            margin-top: 0;
+            font-size: 12px;
+            font-weight: 700;
         }
 
         .online-dot {
@@ -1974,6 +2106,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .dot.green { background: var(--green); }
         .dot.red { background: var(--red); }
+        .dot.yellow { background: #f5b301; }
 
         .bar-chart {
             height: 205px;
@@ -2452,23 +2585,25 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             display: grid;
             place-items: center;
             text-align: center;
-            color: rgba(255, 255, 255, .9);
+            color: rgba(255, 255, 255, .22);
             font-family: "Sora", "Inter", "Segoe UI", Arial, sans-serif;
             padding: 22px;
+            pointer-events: none;
+            user-select: none;
         }
 
         .ops-center-inner {
             display: grid;
-            gap: 8px;
             justify-items: center;
         }
 
         .ops-title {
-            color: rgba(255, 255, 255, .72);
-            font-size: 12px;
+            color: rgba(255, 255, 255, .18);
+            font-size: 26px;
             font-weight: 800;
-            letter-spacing: 1px;
+            letter-spacing: 1.8px;
             text-transform: uppercase;
+            text-shadow: 0 10px 30px rgba(255, 255, 255, .04);
         }
 
         .ops-status {
@@ -2677,13 +2812,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
                         <span>Usuários</span>
                     </a>
-                </div>
-
-                <div class="nav-group">
-                    <div class="nav-label">Configurações</div>
                     <a class="nav-item muted" href="estoque.php">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.4.1.75.3 1 .6.3.3.5.68.5 1.1V11a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.41 0z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
                         <span>Controle de Estoque</span>
+                    </a>
+                    <a class="nav-item muted" href="manutencao.php">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4"/><path d="m15 5 4 4"/></svg>
+                        <span>Manutenção</span>
                     </a>
                 </div>
             </nav>
@@ -2908,12 +3043,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <div class="ops-center" aria-label="Centro Operacional TI">
                             <div class="ops-center-inner">
                                 <div class="ops-title">Centro Operacional TI</div>
-                                <div class="ops-status">Sistema ativo</div>
-                                <div class="ops-sync">
-                                    <span>Última sincronização:</span>
-                                    <strong><?php echo e(date('d/m/y', $ultimaSincronizacao)); ?> &bull; <?php echo e(date('H:i', $ultimaSincronizacao)); ?></strong>
-                                </div>
-                                <div class="ops-note">Todos os serviços funcionando normalmente</div>
                             </div>
                         </div>
                     </div>
@@ -2933,6 +3062,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                 <div class="type-list">
                                     <div class="type-row"><i class="dot green"></i><div><span>ENTREGAS</span><strong id="tipoEntregas"><?php echo (int) $entregasTipo; ?> registros • <?php echo e(number_format((float) $entregasPercent, 1, ',', '.')); ?>%</strong></div></div>
                                     <div class="type-row"><i class="dot red"></i><div><span>TROCAS</span><strong id="tipoTrocas"><?php echo (int) $trocasTipo; ?> registros • <?php echo e(number_format((float) $trocasPercent, 1, ',', '.')); ?>%</strong></div></div>
+                                    <div class="type-row"><i class="dot yellow"></i><div><span>MANUTENÇÃO</span><strong id="tipoManutencoes"><?php echo (int) $manutencoesTipo; ?> registros • <?php echo e(number_format((float) $manutencoesPercent, 1, ',', '.')); ?>%</strong></div></div>
                                 </div>
                             </div>
                         </section>
@@ -2994,7 +3124,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                                         </span>
                                         <div>
-                                            <p><?php echo e($atividade['usuario'] . ' registrou uma ' . strtolower((string) $atividade['tipo']) . ' de ' . $atividade['equipamento'] . '.'); ?></p>
+                                            <?php $atividadeTipo = strtoupper((string) $atividade['tipo']) === 'MANUTENCAO' ? 'manutenção' : strtolower((string) $atividade['tipo']); ?>
+                                            <p><?php echo e($atividade['usuario'] . ' registrou uma ' . $atividadeTipo . ' de ' . $atividade['equipamento'] . '.'); ?></p>
                                             <?php $atividadeTs = strtotime((string) $atividade['data_entrega']); ?>
                                             <time><?php echo e(date('d/m/y', $atividadeTs)); ?> &bull; <?php echo e(date('H:i', $atividadeTs)); ?></time>
                                         </div>
@@ -3023,7 +3154,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         const chartGridColor = 'rgba(255, 255, 255, .08)';
         const initialDashboard = <?php echo json_encode($dashboardPayload, JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK); ?>;
         const initialRecentes = <?php echo json_encode($recentesPage, JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK); ?>;
-        const typeData = [<?php echo (int) $entregasTipo; ?>, <?php echo (int) $trocasTipo; ?>];
+        const typeData = [<?php echo (int) $entregasTipo; ?>, <?php echo (int) $trocasTipo; ?>, <?php echo (int) $manutencoesTipo; ?>];
         const chartColors = ['#e50914', '#c90812', '#a10610', '#f03a43', '#7d0710', '#b70b16', '#d61f28', '#8f0911'];
         let selectedLojaIds = <?php echo json_encode(array_values($filters['loja_ids']), JSON_NUMERIC_CHECK); ?>;
 
@@ -3450,10 +3581,10 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         const tipoChart = new Chart(tipoCanvas, {
             type: 'doughnut',
             data: {
-                labels: ['Entregas', 'Trocas'],
+                labels: ['Entregas', 'Trocas', 'Manutenção'],
                 datasets: [{
                     data: typeData,
-                    backgroundColor: ['#27b84d', '#e50914'],
+                    backgroundColor: ['#27b84d', '#e50914', '#f5b301'],
                     borderColor: '#10151c',
                     borderWidth: 4,
                     hoverOffset: 7
@@ -3526,6 +3657,12 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 minute: '2-digit'
             }).format(date);
             return `${day} &bull; ${time}`;
+        }
+
+        function activityTipoLabel(tipo) {
+            return String(tipo || '').toUpperCase() === 'MANUTENCAO'
+                ? 'manutenção'
+                : String(tipo || '').toLowerCase();
         }
 
         function renderRecentes(data) {
@@ -3603,22 +3740,25 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         function renderTipo(data) {
             const entregas = Number(data.entregas || 0);
             const trocas = Number(data.trocas || 0);
+            const manutencoes = Number(data.manutencoes || 0);
             const total = Number(data.total || 0);
             const entregasPercent = Number(data.entregasPercent || 0);
             const trocasPercent = Number(data.trocasPercent || 0);
+            const manutencoesPercent = Number(data.manutencoesPercent || 0);
             const formatPercent = (value) => value.toLocaleString('pt-BR', {
                 minimumFractionDigits: 1,
                 maximumFractionDigits: 1
             });
             const currentData = tipoChart.data.datasets[0].data.map(Number);
-            if (currentData[0] !== entregas || currentData[1] !== trocas) {
-                tipoChart.data.datasets[0].data = [entregas, trocas];
+            if (currentData[0] !== entregas || currentData[1] !== trocas || currentData[2] !== manutencoes) {
+                tipoChart.data.datasets[0].data = [entregas, trocas, manutencoes];
                 tipoChart.update();
             }
 
             document.getElementById('tipoTotal').textContent = total;
             document.getElementById('tipoEntregas').textContent = `${entregas} registros • ${formatPercent(entregasPercent)}%`;
             document.getElementById('tipoTrocas').textContent = `${trocas} registros • ${formatPercent(trocasPercent)}%`;
+            document.getElementById('tipoManutencoes').textContent = `${manutencoes} registros • ${formatPercent(manutencoesPercent)}%`;
         }
 
         async function loadTipo() {
@@ -3654,7 +3794,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                     </span>
                     <div>
-                        <p>${escapeHtml(atividade.usuario)} registrou uma ${escapeHtml(String(atividade.tipo || '').toLowerCase())} de ${escapeHtml(atividade.equipamento)}.</p>
+                        <p>${escapeHtml(atividade.usuario)} registrou uma ${escapeHtml(activityTipoLabel(atividade.tipo))} de ${escapeHtml(atividade.equipamento)}.</p>
                         <time>${formatShortDateTime(atividade.data_entrega)}</time>
                     </div>
                 </div>
