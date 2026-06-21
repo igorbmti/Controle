@@ -1022,7 +1022,7 @@ function fetchRecentesGerencial(array $filters, int $limit = 5): array
     }
 }
 
-function fetchAtividadesGerencial(array $filters, int $limit = 5): array
+function fetchAtividadesGerencial(array $filters, int $limit = 3): array
 {
     [$whereSql, $params] = buildMovimentacaoWhere($filters);
     [$manutencaoWhere, $manutencaoParams] = tableExists('manutencoes')
@@ -1546,16 +1546,60 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             width: 76px;
             height: 76px;
             border-radius: var(--radius);
-            background: linear-gradient(135deg, #17662d, #0b3318);
-            color: #9ff3b1;
+            background: rgba(107, 114, 128, .06);
             display: grid;
             place-items: center;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+            perspective: 180px;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
         }
 
-        .title-icon svg {
-            width: 38px;
-            height: 38px;
+        .rubiks-cube {
+            position: relative;
+            width: 34px;
+            height: 34px;
+            opacity: .68;
+            transform-style: preserve-3d;
+            animation: rubiksRotate 8s ease-in-out infinite;
+            filter: drop-shadow(0 0 7px rgba(156, 163, 175, .22));
+            transition: opacity .22s ease, filter .22s ease;
+        }
+
+        .title-icon:hover .rubiks-cube {
+            opacity: .84;
+            filter: drop-shadow(0 0 10px rgba(156, 163, 175, .38));
+        }
+
+        .cube-face {
+            position: absolute;
+            inset: 0;
+            border: 1px solid rgba(209, 213, 219, .25);
+            border-radius: 3px;
+            backface-visibility: hidden;
+            background-color: #6b7280;
+            background-image:
+                linear-gradient(to right, transparent 31%, rgba(24, 29, 37, .58) 32%, rgba(24, 29, 37, .58) 35%, transparent 36%, transparent 64%, rgba(24, 29, 37, .58) 65%, rgba(24, 29, 37, .58) 68%, transparent 69%),
+                linear-gradient(to bottom, transparent 31%, rgba(24, 29, 37, .58) 32%, rgba(24, 29, 37, .58) 35%, transparent 36%, transparent 64%, rgba(24, 29, 37, .58) 65%, rgba(24, 29, 37, .58) 68%, transparent 69%);
+            box-shadow: inset 0 0 8px rgba(255, 255, 255, .08);
+        }
+
+        .cube-face.front { transform: translateZ(17px); background-color: #737b88; }
+        .cube-face.back { transform: rotateY(180deg) translateZ(17px); background-color: #555d69; }
+        .cube-face.right { transform: rotateY(90deg) translateZ(17px); background-color: #626a76; }
+        .cube-face.left { transform: rotateY(-90deg) translateZ(17px); background-color: #59616d; }
+        .cube-face.top { transform: rotateX(90deg) translateZ(17px); background-color: #9ca3af; }
+        .cube-face.bottom { transform: rotateX(-90deg) translateZ(17px); background-color: #4f5661; }
+
+        @keyframes rubiksRotate {
+            0% { transform: rotateX(-20deg) rotateY(0deg); }
+            50% { transform: rotateX(20deg) rotateY(180deg); }
+            100% { transform: rotateX(-20deg) rotateY(360deg); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .rubiks-cube {
+                animation: none;
+                transform: rotateX(-18deg) rotateY(32deg);
+            }
         }
 
         .page-title h1 {
@@ -2850,8 +2894,15 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
             <section class="content">
                 <div class="page-title">
-                    <div class="title-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    <div class="title-icon" aria-hidden="true">
+                        <div class="rubiks-cube">
+                            <span class="cube-face front"></span>
+                            <span class="cube-face back"></span>
+                            <span class="cube-face right"></span>
+                            <span class="cube-face left"></span>
+                            <span class="cube-face top"></span>
+                            <span class="cube-face bottom"></span>
+                        </div>
                     </div>
                     <div>
                         <h1>Painel de Controle</h1>
@@ -3325,18 +3376,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             ];
         }
 
-        function updateSelectedStoreFromBar(index) {
-            const item = currentRanking[index];
-            if (!item) return;
-            const ids = item.ids || [];
-            const sameSelection = selectedLojaIds.length === ids.length && ids.every((id) => selectedLojaIds.includes(id));
-            selectedLojaIds = sameSelection ? [] : ids;
-            document.getElementById('globalLoja').value = sameSelection ? '' : ids.join(',');
-        }
-
-        function lojaQuery() {
-            return selectedLojaIds.length ? `&lojas=${selectedLojaIds.join(',')}` : '';
-        }
 
         function pluralAtendimentosJs(total) {
             const value = Number(total || 0);
@@ -3553,26 +3592,40 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 tile.style.setProperty('--tile-delay', `${Math.min(index * 55, 360)}ms`);
             });
 
-            grid.querySelectorAll('.heatmap-tile[data-loja-ids]').forEach((tile) => {
-                const selectLoja = () => {
-                    const ids = tile.dataset.lojaIds
-                        ? tile.dataset.lojaIds.split(',').map(Number).filter(Boolean)
-                        : [];
-                    const sameSelection = selectedLojaIds.length === ids.length && ids.every((id) => selectedLojaIds.includes(id));
-                    selectedLojaIds = sameSelection ? [] : ids;
-                    document.getElementById('globalLoja').value = sameSelection ? '' : ids.join(',');
-                    applyDashboardFilters();
-                };
-
-                tile.addEventListener('click', selectLoja);
-                tile.addEventListener('keydown', (event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        selectLoja();
-                    }
-                });
-            });
         }
+
+        function selectHeatmapLoja(tile) {
+            const ids = tile.dataset.lojaIds
+                ? tile.dataset.lojaIds.split(',').map(Number).filter(Boolean)
+                : [];
+            if (!ids.length) return;
+            const isSameSelection = selectedLojaIds.length === ids.length
+                && ids.every((id) => selectedLojaIds.includes(id));
+            selectedLojaIds = isSameSelection ? [] : ids;
+            document.getElementById('globalLoja').value = selectedLojaIds.join(',');
+
+            document.querySelectorAll('#heatmapLojas .heatmap-tile[data-loja-ids]').forEach((item) => {
+                const itemIds = item.dataset.lojaIds.split(',').map(Number).filter(Boolean);
+                const active = selectedLojaIds.length === itemIds.length
+                    && itemIds.every((id) => selectedLojaIds.includes(id));
+                item.classList.toggle('active', active);
+            });
+
+            applyDashboardFilters([...selectedLojaIds]);
+        }
+
+        const heatmapGrid = document.getElementById('heatmapLojas');
+        heatmapGrid?.addEventListener('click', (event) => {
+            const tile = event.target.closest('.heatmap-tile[data-loja-ids]');
+            if (tile && heatmapGrid.contains(tile)) selectHeatmapLoja(tile);
+        });
+        heatmapGrid?.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const tile = event.target.closest('.heatmap-tile[data-loja-ids]');
+            if (!tile || !heatmapGrid.contains(tile)) return;
+            event.preventDefault();
+            selectHeatmapLoja(tile);
+        });
 
         function updateDashboardScope() {}
 
@@ -3883,7 +3936,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         function renderPrincipalChart(data) {
             const payload = data || {};
-            renderMapaCalor(payload.lojas || [], payload.loja_ids || selectedLojaIds);
+            renderMapaCalor(payload.lojas || [], selectedLojaIds);
         }
 
         function renderProdutosRanking(rows) {
@@ -3972,4 +4025,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
     </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
 
