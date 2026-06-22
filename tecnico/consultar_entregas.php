@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../includes/auth.php';
 
 verificarLogin('TECNICO');
@@ -102,6 +102,10 @@ $lojaValue = implode(',', $lojaIds);
 $tipo = strtoupper(trim((string) ($_GET['tipo'] ?? '')));
 $status = strtoupper(trim((string) ($_GET['status'] ?? '')));
 $detalheId = (int) ($_GET['detalhe'] ?? 0);
+$limitesPermitidos = [5, 10, 20, 30, 50];
+$porPagina = (int) ($_GET['limite'] ?? 5);
+$porPagina = in_array($porPagina, $limitesPermitidos, true) ? $porPagina : 5;
+$pagina = max(1, (int) ($_GET['pagina'] ?? 1));
 
 $where = ['m.usuario_id = :usuario_id'];
 $params = [':usuario_id' => $idUsuario];
@@ -139,6 +143,13 @@ $sqlBase = '
     LEFT JOIN produtos p ON p.id = m.produto_id
     WHERE ' . implode(' AND ', $where);
 
+$countStmt = $pdo->prepare('SELECT COUNT(*) ' . $sqlBase);
+$countStmt->execute($params);
+$totalRegistros = (int) $countStmt->fetchColumn();
+$totalPaginas = max(1, (int) ceil($totalRegistros / $porPagina));
+$pagina = min($pagina, $totalPaginas);
+$offset = ($pagina - 1) * $porPagina;
+
 $stmt = $pdo->prepare('
     SELECT
         m.id,
@@ -154,8 +165,14 @@ $stmt = $pdo->prepare('
         COALESCE(p.nome, "-") AS equipamento
     ' . $sqlBase . '
     ORDER BY m.data_movimentacao DESC, m.id DESC
+    LIMIT :limite OFFSET :offset
 ');
-$stmt->execute($params);
+foreach ($params as $chave => $valor) {
+    $stmt->bindValue($chave, $valor);
+}
+$stmt->bindValue(':limite', $porPagina, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $registros = $stmt->fetchAll();
 
 $detalhe = null;
@@ -228,6 +245,10 @@ if ($detalheId > 0) {
         .filters { display:grid; grid-template-columns:repeat(5,minmax(150px,1fr)); gap:14px; padding:20px 22px; align-items:end; }
         label { display:grid; gap:7px; font-size:13px; font-weight:700; }
         input,select { height:46px; border:1px solid var(--line); border-radius:var(--radius); background:#10151c; color:#fff; padding:0 14px; font:inherit; font-size:14px; }
+        .limit-control { display:flex; align-items:center; gap:8px; align-self:end; }
+        .limit-control .filter-icon { width:46px; height:46px; flex:0 0 46px; display:grid; place-items:center; border:1px solid var(--line); border-radius:var(--radius); background:rgba(255,255,255,.035); color:var(--muted); }
+        .limit-control .filter-icon svg { width:18px; height:18px; }
+        .limit-control select { width:78px; min-width:78px; }
         .filter-actions { display:flex; gap:10px; align-items:center; grid-column:1 / -1; justify-content:flex-end; }
         .btn { min-height:42px; border:1px solid var(--line); border-radius:var(--radius); background:transparent; color:#fff; padding:0 14px; display:inline-flex; align-items:center; justify-content:center; font-weight:800; cursor:pointer; }
         .btn.primary { background:var(--red); border-color:var(--red); }
@@ -239,6 +260,9 @@ if ($detalheId > 0) {
         .badge { display:inline-flex; min-height:26px; align-items:center; padding:0 10px; border-radius:6px; background:rgba(24,98,161,.48); font-weight:800; }
         .badge.ok { background:rgba(36,160,71,.35); }
         .empty { padding:22px; color:var(--muted); }
+        .pagination { display:flex; justify-content:flex-end; gap:8px; padding:16px 18px; }
+        .pagination a, .pagination span { min-width:34px; height:34px; display:grid; place-items:center; border:1px solid var(--line); border-radius:7px; color:#fff; text-decoration:none; }
+        .pagination .active { background:var(--red); border-color:var(--red); }
         .detail { padding:22px; display:grid; gap:12px; }
         .detail strong { color:#fff; }
         .modal-backdrop { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.68); backdrop-filter:blur(8px); }
@@ -311,7 +335,13 @@ if ($detalheId > 0) {
                             <?php endforeach; ?>
                         </select>
                     </label>
-                    <div class="filter-actions">
+                    <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
+                        <select name="limite">
+                            <?php foreach ($limitesPermitidos as $limite): ?>
+                                <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>                    <div class="filter-actions">
                         <button class="btn primary" type="submit">Pesquisar</button>
                         <a class="btn" href="consultar_entregas.php">Limpar</a>
                     </div>
@@ -368,6 +398,15 @@ if ($detalheId > 0) {
                         </tbody>
                     </table>
                 </div>
+                <?php if ($totalPaginas > 1): ?>
+                    <nav class="pagination" aria-label="Paginação">
+                        <?php for ($i = 1; $i <= $totalPaginas; $i++): ?>
+                            <?php if ($i === $pagina): ?><span class="active"><?php echo $i; ?></span>
+                            <?php else: ?><a href="<?php echo e('consultar_entregas.php?' . http_build_query(array_merge($_GET, ['pagina' => $i, 'detalhe' => null]))); ?>"><?php echo $i; ?></a>
+                            <?php endif; ?>
+                        <?php endfor; ?>
+                    </nav>
+                <?php endif; ?>
             </section>
         </section>
     </main>

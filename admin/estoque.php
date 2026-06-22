@@ -162,6 +162,19 @@ if (!empty($lojaIds)) {
 }
 
 $where = $whereParts ? 'WHERE ' . implode(' AND ', $whereParts) : '';
+$limitesPermitidos = [5, 10, 20, 30, 50];
+$porPagina = (int) ($_GET['limite'] ?? 5);
+$porPagina = in_array($porPagina, $limitesPermitidos, true) ? $porPagina : 5;
+$pagina = max(1, (int) ($_GET['pagina'] ?? 1));
+$countStmt = $pdo->prepare("SELECT COUNT(*) FROM estoque_equipamentos e INNER JOIN produtos p ON p.id = e.produto_id {$where}");
+foreach ($params as $key => $value) {
+    $countStmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
+}
+$countStmt->execute();
+$totalRegistros = (int) $countStmt->fetchColumn();
+$totalPaginas = max(1, (int) ceil($totalRegistros / $porPagina));
+$pagina = min($pagina, $totalPaginas);
+$offset = ($pagina - 1) * $porPagina;
 
 $stmt = $pdo->prepare("
     SELECT
@@ -173,10 +186,13 @@ $stmt = $pdo->prepare("
     INNER JOIN produtos p ON p.id = e.produto_id
     {$where}
     ORDER BY p.nome
+    LIMIT :limite OFFSET :offset
 ");
 foreach ($params as $key => $value) {
     $stmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
 }
+$stmt->bindValue(':limite', $porPagina, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 $stmt->execute();
 $estoques = $stmt->fetchAll();
 
@@ -253,7 +269,13 @@ adminPageStart('Controle de Estoque');
     <label>Pesquisar equipamento
         <input type="text" name="busca" value="<?php echo e($busca); ?>" placeholder="Nome do equipamento">
     </label>
-    <button class="btn primary" type="submit">Pesquisar</button>
+    <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
+        <select name="limite">
+            <?php foreach ($limitesPermitidos as $limite): ?>
+                <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
+            <?php endforeach; ?>
+        </select>
+    </label>    <button class="btn primary" type="submit">Pesquisar</button>
     <a class="btn" href="<?php echo $somenteCritico ? 'estoque.php?critico=1' : 'estoque.php'; ?>">Limpar</a>
 </form>
 
@@ -304,5 +326,13 @@ adminPageStart('Controle de Estoque');
             </table>
         </div>
     <?php endif; ?>
-</section>
+    <?php if ($totalPaginas > 1): ?>
+        <nav class="pagination" aria-label="Paginação">
+            <?php for ($i = 1; $i <= $totalPaginas; $i++): ?>
+                <?php if ($i === $pagina): ?><span class="active"><?php echo $i; ?></span>
+                <?php else: ?><a href="<?php echo e(pageUrl(['pagina' => $i])); ?>"><?php echo $i; ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+        </nav>
+    <?php endif; ?></section>
 <?php adminPageEnd(); ?>

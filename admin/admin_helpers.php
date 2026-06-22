@@ -117,6 +117,25 @@ function adminPageStart(string $title): void
                 padding: 0 10px;
                 font: inherit;
             }
+            .limit-control {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                align-self: end;
+            }
+            .limit-control .filter-icon {
+                width: 38px;
+                height: 38px;
+                flex: 0 0 38px;
+                display: grid;
+                place-items: center;
+                border: 1px solid var(--line);
+                border-radius: var(--radius);
+                background: rgba(255, 255, 255, .035);
+                color: var(--muted);
+            }
+            .limit-control .filter-icon svg { width: 17px; height: 17px; }
+            .limit-control select { width: 74px; min-width: 74px; }
             .table-wrap { overflow-x: auto; }
             table {
                 width: 100%;

@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $stmt = $pdo->prepare("
                     INSERT INTO manutencoes (id_item, id_loja, descricao, status, id_usuario, data_registro, data_conclusao, ativo)
-                    VALUES (:id_item, :id_loja, :descricao, :status, :id_usuario, NOW(), :data_conclusao, 1)
+                    VALUES (:id_item, :id_loja, :descricao, :status, :id_usuario, NOW(), CASE WHEN :status_conclusao = 'CONCLUIDO' THEN NOW() ELSE NULL END, 1)
                 ");
                 $stmt->execute([
                     ':id_item' => $equipamentoId,
@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':descricao' => $descricao,
                     ':status' => $status,
                     ':id_usuario' => $idUsuario,
-                    ':data_conclusao' => $status === 'CONCLUIDO' ? date('Y-m-d H:i:s') : null,
+                    ':status_conclusao' => $status,
                 ]);
             }
 
@@ -139,25 +139,44 @@ if (!empty($_GET['editar'])) {
 $equipamentos = buscarEquipamentosManutencao($pdo);
 $lojas = buscarLojasManutencao($pdo);
 
-$stmt = $pdo->query("
-    SELECT
-        m.id_manutencao,
-        COALESCE(p.nome, pi.nome, '-') AS equipamento,
-        COALESCE(l.nome, '-') AS loja,
-        COALESCE(u.nome, '-') AS usuario,
-        m.descricao,
-        m.status,
-        m.data_registro,
-        m.data_conclusao
-    FROM manutencoes m
-    LEFT JOIN produtos p ON p.id = m.id_item
-    LEFT JOIN itens i ON i.id = m.id_item
-    LEFT JOIN produtos pi ON pi.id = i.produto_id
-    LEFT JOIN lojas l ON l.id = m.id_loja
-    LEFT JOIN usuarios u ON u.id = m.id_usuario
-    WHERE COALESCE(m.ativo, 1) = 1
-    ORDER BY m.data_registro DESC, m.id_manutencao DESC
-");
+$filtroStatus = strtoupper(trim((string) ($_GET['filtro'] ?? 'RECENTES')));
+$filtroStatus = in_array($filtroStatus, ['RECENTES', 'CONCLUIDAS', 'TODAS'], true) ? $filtroStatus : 'RECENTES';
+$busca = trim((string) ($_GET['busca'] ?? ''));
+$limitesPermitidos = [5, 10, 20, 30, 50];
+$porPagina = (int) ($_GET['limite'] ?? 5);
+$porPagina = in_array($porPagina, $limitesPermitidos, true) ? $porPagina : 5;
+$pagina = max(1, (int) ($_GET['pagina'] ?? 1));
+$where = ['COALESCE(m.ativo, 1) = 1'];
+$params = [];
+if ($filtroStatus === 'RECENTES' && $busca === '') $where[] = "UPPER(m.status) = 'EM_MANUTENCAO'";
+elseif ($filtroStatus === 'CONCLUIDAS') $where[] = "UPPER(m.status) = 'CONCLUIDO'";
+if ($busca !== '') {
+    $where[] = '(p.nome LIKE :busca_produto OR pi.nome LIKE :busca_item OR l.nome LIKE :busca_loja)';
+    $params[':busca_produto'] = '%' . $busca . '%';
+    $params[':busca_item'] = '%' . $busca . '%';
+    $params[':busca_loja'] = '%' . $busca . '%';
+}
+$baseSql = " FROM manutencoes m
+ LEFT JOIN produtos p ON p.id = m.id_item
+ LEFT JOIN itens i ON i.id = m.id_item
+ LEFT JOIN produtos pi ON pi.id = i.produto_id
+ LEFT JOIN lojas l ON l.id = m.id_loja
+ LEFT JOIN usuarios u ON u.id = m.id_usuario
+ WHERE " . implode(' AND ', $where);
+$countStmt = $pdo->prepare('SELECT COUNT(*) ' . $baseSql);
+$countStmt->execute($params);
+$totalRegistros = (int) $countStmt->fetchColumn();
+$totalPaginas = max(1, (int) ceil($totalRegistros / $porPagina));
+$pagina = min($pagina, $totalPaginas);
+$offset = ($pagina - 1) * $porPagina;
+$stmt = $pdo->prepare("SELECT m.id_manutencao, COALESCE(p.nome, pi.nome, '-') AS equipamento,
+ COALESCE(l.nome, '-') AS loja, COALESCE(u.nome, '-') AS usuario, m.descricao, m.status,
+ m.data_registro, m.data_conclusao " . $baseSql . "
+ ORDER BY m.data_registro DESC, m.id_manutencao DESC LIMIT :limite OFFSET :offset");
+foreach ($params as $chave => $valor) $stmt->bindValue($chave, $valor);
+$stmt->bindValue(':limite', $porPagina, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $manutencoes = $stmt->fetchAll();
 
 adminPageStart('Manutenção');
@@ -193,7 +212,15 @@ adminPageStart('Manutenção');
         white-space: normal;
         color: var(--muted);
     }
-    @media (max-width: 980px) {
+    .maintenance-filter { grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px) minmax(120px, 150px) auto auto; align-items: end; }
+    .maintenance-modal { position: fixed; inset: 0; z-index: 1200; display: none; place-items: center; padding: 24px; background: rgba(0,0,0,.72); backdrop-filter: blur(4px); }
+    .maintenance-modal.open { display: grid; }
+    .maintenance-modal-dialog { width: min(560px, 100%); border: 1px solid var(--line); border-radius: 8px; background: #11171f; box-shadow: 0 24px 70px rgba(0,0,0,.52); overflow: hidden; }
+    .maintenance-modal-header, .maintenance-modal-footer { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 18px; }
+    .maintenance-modal-header { border-bottom:1px solid var(--line); }
+    .maintenance-modal-header h2 { margin:0; font-size:16px; }
+    .maintenance-modal-body { padding:18px; color:#dce2ea; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .maintenance-modal-footer { border-top:1px solid var(--line); justify-content:flex-end; }    @media (max-width: 980px) {
         .maintenance-form { grid-template-columns: 1fr; }
         .maintenance-form label.description { grid-column: auto; }
     }
@@ -256,6 +283,21 @@ adminPageStart('Manutenção');
         <textarea name="descricao" required><?php echo e($editando['descricao'] ?? ''); ?></textarea>
     </label>
 </form>
+<form class="panel filters maintenance-filter" method="GET">
+    <label>Pesquisar<input type="search" name="busca" value="<?php echo e($busca); ?>" placeholder="Equipamento ou loja"></label>
+    <label>Exibir<select name="filtro">
+        <option value="RECENTES" <?php echo $filtroStatus === 'RECENTES' ? 'selected' : ''; ?>>Manutenções Recentes</option>
+        <option value="CONCLUIDAS" <?php echo $filtroStatus === 'CONCLUIDAS' ? 'selected' : ''; ?>>Concluídas</option>
+        <option value="TODAS" <?php echo $filtroStatus === 'TODAS' ? 'selected' : ''; ?>>Todas</option>
+    </select></label>
+    <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span><select name="limite">
+        <?php foreach ($limitesPermitidos as $limite): ?>
+            <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
+        <?php endforeach; ?>
+    </select></label>
+    <button class="btn primary" type="submit">Pesquisar</button>
+    <a class="btn" href="manutencao.php">Limpar</a>
+</form>
 
 <section class="panel">
     <?php if (empty($manutencoes)): ?>
@@ -268,7 +310,7 @@ adminPageStart('Manutenção');
                         <th>ID</th>
                         <th>Equipamento</th>
                         <th>Loja</th>
-                        <th>Descrição</th>
+
                         <th>Status</th>
                         <th>Data de envio</th>
                         <th>Usuário</th>
@@ -282,12 +324,13 @@ adminPageStart('Manutenção');
                             <td><?php echo (int) $row['id_manutencao']; ?></td>
                             <td><?php echo e($row['equipamento']); ?></td>
                             <td><?php echo e($row['loja']); ?></td>
-                            <td class="description-cell"><?php echo e($row['descricao']); ?></td>
+
                             <td><span class="maintenance-badge <?php echo $concluido ? 'done' : ''; ?>"><?php echo e(statusManutencaoLabel((string) $row['status'])); ?></span></td>
                             <td><?php echo e(date('d/m/Y H:i', strtotime((string) $row['data_registro']))); ?></td>
                             <td><?php echo e($row['usuario']); ?></td>
                             <td>
                                 <div class="maintenance-actions">
+                                    <button class="btn js-view-description" type="button" data-description="<?php echo e($row['descricao']); ?>">Visualizar</button>
                                     <a class="btn" href="manutencao.php?editar=<?php echo (int) $row['id_manutencao']; ?>">Editar</a>
                                     <?php if (!$concluido): ?>
                                         <form method="POST" style="display:inline;">
@@ -309,5 +352,35 @@ adminPageStart('Manutenção');
             </table>
         </div>
     <?php endif; ?>
-</section>
-<?php adminPageEnd(); ?>
+    <?php if ($totalPaginas > 1): ?>
+        <nav class="pagination" aria-label="Paginação">
+            <?php for ($i = 1; $i <= $totalPaginas; $i++): ?>
+                <?php if ($i === $pagina): ?><span class="active"><?php echo $i; ?></span>
+                <?php else: ?><a href="<?php echo e(pageUrl(['pagina' => $i])); ?>"><?php echo $i; ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+        </nav>
+    <?php endif; ?></section>
+<div class="maintenance-modal" id="descriptionModal" aria-hidden="true">
+    <div class="maintenance-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="descriptionModalTitle">
+        <div class="maintenance-modal-header"><h2 id="descriptionModalTitle">Descrição do Problema</h2><button class="btn js-close-description" type="button">Fechar</button></div>
+        <div class="maintenance-modal-body" id="descriptionModalBody"></div>
+        <div class="maintenance-modal-footer"><button class="btn primary js-close-description" type="button">Entendi</button></div>
+    </div>
+</div>
+<script>
+(() => {
+    const modal = document.getElementById('descriptionModal');
+    const body = document.getElementById('descriptionModalBody');
+    if (!modal || !body) return;
+    const closeModal = () => { modal.classList.remove('open'); modal.setAttribute('aria-hidden', 'true'); };
+    document.querySelectorAll('.js-view-description').forEach((button) => button.addEventListener('click', () => {
+        body.textContent = button.dataset.description || 'Nenhuma descrição registrada.';
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+    }));
+    modal.querySelectorAll('.js-close-description').forEach((button) => button.addEventListener('click', closeModal));
+    modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && modal.classList.contains('open')) closeModal(); });
+})();
+</script><?php adminPageEnd(); ?>

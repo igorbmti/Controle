@@ -235,7 +235,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
 
             $funcionarioId = buscarFuncionario($pdo, $solicitante, $lojaId, $setorId);
             $dataSql = date('Y-m-d', strtotime($dataEntrega));
-            $dataMovimentacaoSql = $dataSql . ' ' . date('H:i:s');
+            $dataRegistroSql = $dataSql . ' ' . date('H:i:s');
             $tipoFormatado = $tipo === 'TROCA' ? 'Troca' : 'Entrega';
             $descricao = $tipoFormatado . ' de ' . $quantidade . ' unidade(s) de ' . $estoque['equipamento'];
             $observacaoEntrega = "Solicitante: {$solicitante}\nStatus: CONCLUIDA\nJustificativa: {$justificativa}";
@@ -249,7 +249,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
                 ':funcionario_id' => $funcionarioId,
                 ':loja_id' => $lojaId,
                 ':usuario_id' => $idUsuario,
-                ':data_entrega' => $dataSql,
+                ':data_entrega' => $dataRegistroSql,
                 ':observacao' => $observacaoEntrega,
                 ':id_setor' => $setorId,
             ]);
@@ -263,7 +263,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
                 VALUES (
                     :tipo, :produto_id, :item_id, :loja_id, :setor_id, :funcionario_id,
                     :solicitante_nome, :quantidade, :status, :justificativa, :usuario_id,
-                    :descricao, :data_movimentacao, NOW()
+                    :descricao, NOW(), NOW()
                 )
             ');
             $stmt->execute([
@@ -279,7 +279,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
                 ':justificativa' => $justificativa,
                 ':usuario_id' => $idUsuario,
                 ':descricao' => $descricao,
-                ':data_movimentacao' => $dataMovimentacaoSql,
             ]);
 
             if ($tipo === 'TROCA') {
@@ -293,7 +292,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
                     ':funcionario_id' => $funcionarioId,
                     ':loja_id' => $lojaId,
                     ':usuario_id' => $idUsuario,
-                    ':data_troca' => $dataSql,
+                    ':data_troca' => $dataRegistroSql,
                     ':motivo' => $justificativa,
                 ]);
             }

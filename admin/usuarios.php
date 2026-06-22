@@ -236,7 +236,7 @@ adminPageStart('Usuários');
     }
     .users-toolbar {
         display: grid;
-        grid-template-columns: minmax(260px, 1fr) auto;
+        grid-template-columns: minmax(260px, 1fr) auto auto;
         gap: 12px;
         align-items: end;
         padding: 16px 18px;
@@ -500,14 +500,18 @@ elseif ($acao === 'visualizar'):
 else:
     $busca = trim((string) ($_GET['busca'] ?? ''));
     $pagina = max(1, (int) ($_GET['pagina'] ?? 1));
-    $porPagina = 10;
+    $limitesPermitidos = [5, 10, 20, 30, 50];
+    $porPagina = (int) ($_GET['limite'] ?? 5);
+    $porPagina = in_array($porPagina, $limitesPermitidos, true) ? $porPagina : 5;
     $offset = ($pagina - 1) * $porPagina;
-    $where = '';
+    $where = 'WHERE ativo = 1';
     $params = [];
 
     if ($busca !== '') {
-        $where = 'WHERE nome LIKE :busca OR usuario LIKE :busca OR nivel LIKE :busca';
-        $params[':busca'] = '%' . $busca . '%';
+        $where .= ' AND (nome LIKE :busca_nome OR usuario LIKE :busca_login OR nivel LIKE :busca_perfil)';
+        $params[':busca_nome'] = '%' . $busca . '%';
+        $params[':busca_login'] = '%' . $busca . '%';
+        $params[':busca_perfil'] = '%' . $busca . '%';
     }
 
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM usuarios {$where}");
@@ -535,6 +539,13 @@ else:
             <label class="search-box" aria-label="Buscar usuários">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                 <input type="search" name="busca" value="<?php echo e($busca); ?>" placeholder="Buscar por nome, login ou perfil" autocomplete="off">
+            </label>
+            <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
+                <select name="limite" onchange="this.form.submit()">
+                    <?php foreach ($limitesPermitidos as $limite): ?>
+                        <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
+                    <?php endforeach; ?>
+                </select>
             </label>
             <?php if ($busca !== ''): ?>
                 <a class="btn" href="usuarios.php">Limpar</a>

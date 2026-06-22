@@ -23,7 +23,15 @@ $sql = "
     ORDER BY s.nome
 ";
 
-$dados = getConnection()->query($sql)->fetchAll();
+$limitesPermitidos = [5, 10, 20, 30, 50];
+$porPagina = (int) ($_GET['limite'] ?? 5);
+$porPagina = in_array($porPagina, $limitesPermitidos, true) ? $porPagina : 5;
+$pagina = max(1, (int) ($_GET['pagina'] ?? 1));
+$todosDados = getConnection()->query($sql)->fetchAll();
+$totalRegistros = count($todosDados);
+$totalPaginas = max(1, (int) ceil($totalRegistros / $porPagina));
+$pagina = min($pagina, $totalPaginas);
+$dados = array_slice($todosDados, ($pagina - 1) * $porPagina, $porPagina);
 
 adminPageStart('Equipamentos por Setor');
 ?>
@@ -37,6 +45,14 @@ adminPageStart('Equipamentos por Setor');
         <a class="btn" href="dashboard.php">Voltar</a>
     </div>
 </section>
+<form class="panel filters" method="GET">
+    <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span><select name="limite">
+        <?php foreach ($limitesPermitidos as $limite): ?>
+            <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
+        <?php endforeach; ?>
+    </select></label>
+    <button class="btn primary" type="submit">Aplicar</button>
+</form>
 
 <section class="panel">
     <div class="actions-note">Estrutura preparada para exportação futura.</div>
@@ -66,5 +82,12 @@ adminPageStart('Equipamentos por Setor');
             </table>
         </div>
     <?php endif; ?>
-</section>
+    <?php if ($totalPaginas > 1): ?>
+        <nav class="pagination" aria-label="Paginação">
+            <?php for ($i = 1; $i <= $totalPaginas; $i++): ?>
+                <?php if ($i === $pagina): ?><span class="active"><?php echo $i; ?></span>
+                <?php else: ?><a href="<?php echo e(pageUrl(['pagina' => $i])); ?>"><?php echo $i; ?></a><?php endif; ?>
+            <?php endfor; ?>
+        </nav>
+    <?php endif; ?></section>
 <?php adminPageEnd(); ?>

@@ -2,7 +2,9 @@
 require_once __DIR__ . '/admin_helpers.php';
 
 $pdo = getConnection();
-$perPage = 10;
+$allowedLimits = [5, 10, 20, 30, 50];
+$perPage = (int) ($_GET['limite'] ?? 5);
+$perPage = in_array($perPage, $allowedLimits, true) ? $perPage : 5;
 $page = max(1, (int) ($_GET['pagina'] ?? 1));
 $offset = ($page - 1) * $perPage;
 
@@ -41,6 +43,16 @@ adminPageStart('Atividades');
     </div>
     <a class="btn" href="dashboard.php">Voltar</a>
 </section>
+<form class="panel filters" method="GET">
+    <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
+        <select name="limite">
+            <?php foreach ($allowedLimits as $limit): ?>
+                <option value="<?php echo $limit; ?>" <?php echo $perPage === $limit ? 'selected' : ''; ?>><?php echo $limit; ?></option>
+            <?php endforeach; ?>
+        </select>
+    </label>
+    <button class="btn primary" type="submit">Aplicar</button>
+</form>
 
 <section class="panel">
     <?php if (empty($atividades)): ?>

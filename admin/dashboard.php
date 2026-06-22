@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../includes/auth.php';
 
 verificarLogin('ADMIN');
@@ -1825,7 +1825,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         .top-product-row {
             min-height: 44px;
             display: grid;
-            grid-template-columns: 42px minmax(0, 1fr);
+            grid-template-columns: 42px minmax(0, 1fr) auto;
             align-items: center;
             gap: 12px;
             padding: 0 12px;
@@ -2277,10 +2277,18 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             transform: translateX(2px);
         }
 
+
+        .top-product-qty {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
         .type-row span {
             display: block;
             color: var(--muted);
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 800;
             text-transform: uppercase;
         }
@@ -2288,7 +2296,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         .type-row strong {
             display: block;
             color: #fff;
-            font-size: 14px;
+            font-size: 12px;
             margin-top: 2px;
         }
 
@@ -3058,11 +3066,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                                 <td><?php echo e($row['usuario']); ?></td>
                                                 <td>
                                                     <span class="kind <?php echo $tipo === 'TROCA' ? 'troca' : 'entrega'; ?>">
-                                                        <?php if ($tipo === 'TROCA'): ?>
-                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M16 16h5v5"/></svg>
-                                                        <?php else: ?>
-                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                                                        <?php endif; ?>
+
                                                         <?php echo $tipo === 'TROCA' ? 'Troca' : 'Entrega'; ?>
                                                     </span>
                                                 </td>
@@ -3130,6 +3134,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                     <div class="top-product-row">
                                         <span class="top-product-rank"><?php echo e($rankIcons[$index]); ?></span>
                                         <span class="top-product-name" title="<?php echo e($produto['produto']); ?>"><?php echo e($produto['produto']); ?></span>
+                                        <span class="top-product-qty">Qtd: <?php echo (int) $produto['total']; ?></span>
                                     </div>
                                 <?php endforeach; ?>
                                 <?php if (empty($produtosRanking)): ?>
@@ -3178,7 +3183,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                             <?php $atividadeTipo = strtoupper((string) $atividade['tipo']) === 'MANUTENCAO' ? 'manutenção' : strtolower((string) $atividade['tipo']); ?>
                                             <p><?php echo e($atividade['usuario'] . ' registrou uma ' . $atividadeTipo . ' de ' . $atividade['equipamento'] . '.'); ?></p>
                                             <?php $atividadeTs = strtotime((string) $atividade['data_entrega']); ?>
-                                            <time><?php echo e(date('d/m/y', $atividadeTs)); ?> &bull; <?php echo e(date('H:i', $atividadeTs)); ?></time>
+                                            <time><?php echo e(date('d/m/Y', $atividadeTs)); ?> <?php echo e(date('H:i', $atividadeTs)); ?></time>
                                         </div>
                                     </div>
                                 <?php endforeach; ?>
@@ -3703,13 +3708,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             const day = new Intl.DateTimeFormat('pt-BR', {
                 day: '2-digit',
                 month: '2-digit',
-                year: '2-digit'
+                year: 'numeric'
             }).format(date);
             const time = new Intl.DateTimeFormat('pt-BR', {
                 hour: '2-digit',
                 minute: '2-digit'
             }).format(date);
-            return `${day} &bull; ${time}`;
+            return `${day} ${time}`;
         }
 
         function activityTipoLabel(tipo) {
@@ -3740,14 +3745,10 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 const isTroca = tipo === 'TROCA';
                 const isOk = status === 'CONCLUIDA' || status === 'CONCLUÍDA';
                 const tipoLabel = isTroca ? 'Troca' : 'Entrega';
-                const icon = isTroca
-                    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/><path d="M16 16h5v5"/></svg>'
-                    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>';
-
                 return `
                     <tr>
                         <td>${escapeHtml(row.usuario)}</td>
-                        <td><span class="kind ${isTroca ? 'troca' : 'entrega'}">${icon}${tipoLabel}</span></td>
+                        <td><span class="kind ${isTroca ? 'troca' : 'entrega'}">${tipoLabel}</span></td>
                         <td>${escapeHtml(row.equipamento)}</td>
                         <td>${escapeHtml(row.loja)}</td>
                         <td>${escapeHtml(row.solicitante || '-')}</td>
@@ -3809,7 +3810,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             }
 
             document.getElementById('tipoTotal').textContent = total;
-            document.getElementById('tipoEntregas').textContent = `${entregas} registros • ${formatPercent(entregasPercent)}%`;
+            document.getElementById('tipoEntregas').textContent = `${entregas} registros ${formatPercent(entregasPercent)}%`;
             document.getElementById('tipoTrocas').textContent = `${trocas} registros • ${formatPercent(trocasPercent)}%`;
             document.getElementById('tipoManutencoes').textContent = `${manutencoes} registros • ${formatPercent(manutencoesPercent)}%`;
         }
@@ -3949,6 +3950,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                     <div class="top-product-row">
                         <span class="top-product-rank">-</span>
                         <span class="top-product-name">Nenhuma movimentação registrada.</span>
+
                     </div>
                 `;
                 return;
@@ -3958,6 +3960,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 <div class="top-product-row">
                     <span class="top-product-rank">${rankIcons[index]}</span>
                     <span class="top-product-name" title="${escapeHtml(row.produto)}">${escapeHtml(row.produto)}</span>
+                    <span class="top-product-qty">Qtd: ${Number(row.total || 0)}</span>
                 </div>
             `).join('');
         }
