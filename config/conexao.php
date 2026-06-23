@@ -6,6 +6,8 @@
 
 declare(strict_types=1);
 
+date_default_timezone_set('America/Sao_Paulo');
+
 $dbHost = 'localhost';
 $dbPort = 3306;
 $dbName = 'controle_big';
@@ -20,6 +22,7 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
+    $pdo->exec("SET time_zone = '-03:00'");
 } catch (PDOException $e) {
     error_log('Erro de conexao PDO: ' . $e->getMessage());
     $pdo = null;

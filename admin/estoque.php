@@ -270,12 +270,13 @@ adminPageStart('Controle de Estoque');
         <input type="text" name="busca" value="<?php echo e($busca); ?>" placeholder="Nome do equipamento">
     </label>
     <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
-        <select name="limite">
+        <select name="limite" onchange="this.form.submit()">
             <?php foreach ($limitesPermitidos as $limite): ?>
                 <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
             <?php endforeach; ?>
         </select>
-    </label>    <button class="btn primary" type="submit">Pesquisar</button>
+    </label>
+    <button class="btn primary" type="submit">Pesquisar</button>
     <a class="btn" href="<?php echo $somenteCritico ? 'estoque.php?critico=1' : 'estoque.php'; ?>">Limpar</a>
 </form>
 

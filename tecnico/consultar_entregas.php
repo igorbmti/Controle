@@ -279,9 +279,47 @@ if ($detalheId > 0) {
         @keyframes modalFade { from{opacity:0} to{opacity:1} }
         @media (max-width:1050px) { .app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.filters{grid-template-columns:repeat(2,minmax(0,1fr))} }
         @media (max-width:640px) { .content{padding:22px}.filters{grid-template-columns:1fr}.filter-actions{justify-content:flex-start;flex-direction:column;align-items:stretch}.modal-body{grid-template-columns:1fr} }
+
+        .mobile-menu-toggle,
+        .mobile-sidebar-backdrop { display:none; }
+        @media (max-width:860px) {
+            body { overflow-x:hidden; }
+            body.menu-open { overflow:hidden; }
+            .mobile-menu-toggle { position:fixed; top:14px; left:14px; z-index:1301; width:44px; height:44px; border:1px solid rgba(255,255,255,.12); border-radius:10px; background:rgba(14,18,25,.94); color:#fff; display:inline-grid; place-items:center; font-size:22px; font-weight:800; box-shadow:0 12px 32px rgba(0,0,0,.32); }
+            .mobile-sidebar-backdrop { position:fixed; inset:0; z-index:1290; display:block; background:rgba(0,0,0,.58); opacity:0; pointer-events:none; transition:opacity .22s ease; }
+            body.menu-open .mobile-sidebar-backdrop { opacity:1; pointer-events:auto; }
+            .app { grid-template-columns:1fr !important; }
+            .sidebar { position:fixed !important; inset:0 auto 0 0; width:min(82vw,302px); height:100dvh !important; z-index:1300; padding:26px 20px 22px !important; transform:translateX(-104%); transition:transform .24s ease; overflow-y:auto; box-shadow:24px 0 52px rgba(0,0,0,.42); }
+            body.menu-open .sidebar { transform:translateX(0); }
+            .sidebar-footer { margin-top:auto !important; }
+            .topbar { min-height:64px; height:64px; padding:0 16px 0 70px !important; justify-content:flex-end !important; }
+            .content { padding:18px 14px 28px !important; }
+            .page-title { gap:14px; align-items:center; }
+            .page-title h1 { font-size:24px; }
+            .page-title p { font-size:13px; }
+            .panel { padding:16px; }
+            .filters, .grid, .form-row.delivery, .form-row.equipment, .form-row.quantity { grid-template-columns:1fr !important; }
+            .type-options { grid-template-columns:1fr !important; }
+            .form-footer, .filter-actions { align-items:stretch !important; flex-direction:column !important; }
+            .submit, .btn { width:100%; min-height:46px; justify-content:center; }
+            input, select, textarea { font-size:16px; }
+            .table-wrap { overflow:visible !important; }
+            table { min-width:0 !important; width:100%; border-collapse:separate; border-spacing:0 10px; }
+            thead { display:none; }
+            tbody { display:grid; gap:10px; }
+            tr { display:block; border:1px solid rgba(255,255,255,.08); border-radius:8px; background:rgba(255,255,255,.035); padding:10px 12px; }
+            td { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; border:0 !important; padding:9px 0 !important; white-space:normal !important; text-align:right; overflow-wrap:anywhere; }
+            td::before { content:attr(data-label); color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.45px; text-align:left; flex:0 0 42%; }
+            td[colspan] { display:block; text-align:center; color:var(--muted); }
+            td[colspan]::before { content:none; }
+            .pagination { justify-content:center; flex-wrap:wrap; }
+        }
+        @media (max-width:420px) { .title-icon { width:52px !important; height:52px !important; } .page-title h1 { font-size:22px; } .brand { font-size:36px; } }
     </style>
 </head>
 <body>
+<button class="mobile-menu-toggle" type="button" aria-label="Abrir menu" aria-expanded="false">☰</button>
+<div class="mobile-sidebar-backdrop" data-close-menu></div>
 <div class="app">
     <aside class="sidebar">
         <div class="brand"><span>Big</span><span>mais</span><span class="plus">+</span></div>
@@ -336,12 +374,13 @@ if ($detalheId > 0) {
                         </select>
                     </label>
                     <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
-                        <select name="limite">
+                        <select name="limite" onchange="this.form.submit()">
                             <?php foreach ($limitesPermitidos as $limite): ?>
                                 <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
                             <?php endforeach; ?>
                         </select>
-                    </label>                    <div class="filter-actions">
+                    </label>
+                    <div class="filter-actions">
                         <button class="btn primary" type="submit">Pesquisar</button>
                         <a class="btn" href="consultar_entregas.php">Limpar</a>
                     </div>
@@ -412,6 +451,33 @@ if ($detalheId > 0) {
     </main>
 </div>
 <script>
+    function prepareResponsiveTables() {
+        document.querySelectorAll('table').forEach((table) => {
+            const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+            table.querySelectorAll('tbody tr').forEach((row) => {
+                Array.from(row.children).forEach((cell, index) => {
+                    if (!cell.hasAttribute('data-label') && headers[index]) cell.setAttribute('data-label', headers[index]);
+                });
+            });
+        });
+    }
+    function setupMobileMenu() {
+        const toggle = document.querySelector('.mobile-menu-toggle');
+        const backdrop = document.querySelector('.mobile-sidebar-backdrop');
+        const closeMenu = () => {
+            document.body.classList.remove('menu-open');
+            toggle?.setAttribute('aria-expanded', 'false');
+        };
+        toggle?.addEventListener('click', () => {
+            const isOpen = document.body.classList.toggle('menu-open');
+            toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+        backdrop?.addEventListener('click', closeMenu);
+        document.querySelectorAll('.sidebar a').forEach((link) => link.addEventListener('click', closeMenu));
+        document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
+    }
+    prepareResponsiveTables();
+    setupMobileMenu();
     document.addEventListener('click', (event) => {
         const link = event.target.closest('a[href]');
         if (!link || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

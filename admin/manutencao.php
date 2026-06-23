@@ -290,7 +290,7 @@ adminPageStart('Manutenção');
         <option value="CONCLUIDAS" <?php echo $filtroStatus === 'CONCLUIDAS' ? 'selected' : ''; ?>>Concluídas</option>
         <option value="TODAS" <?php echo $filtroStatus === 'TODAS' ? 'selected' : ''; ?>>Todas</option>
     </select></label>
-    <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span><select name="limite">
+    <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span><select name="limite" onchange="this.form.submit()">
         <?php foreach ($limitesPermitidos as $limite): ?>
             <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
         <?php endforeach; ?>

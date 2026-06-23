@@ -27,7 +27,7 @@ if (!empty($_GET['usuario_id'])) {
     $params[':usuario_id'] = (int) $_GET['usuario_id'];
 }
 if (!empty($_GET['produto_id'])) {
-    $where[] = 'm.produto_id = :produto_id';
+    $where[] = 'COALESCE(i.produto_id, m.produto_id) = :produto_id';
     $params[':produto_id'] = (int) $_GET['produto_id'];
 }
 if (!empty($_GET['tipo'])) {
@@ -47,7 +47,8 @@ $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 $baseSql = "
     FROM movimentacoes m
     LEFT JOIN usuarios u ON u.id = m.usuario_id
-    LEFT JOIN produtos p ON p.id = m.produto_id
+    LEFT JOIN itens i ON i.id = m.item_id
+    LEFT JOIN produtos p ON p.id = COALESCE(i.produto_id, m.produto_id)
     LEFT JOIN lojas l ON l.id = m.loja_id
     {$whereSql}
 ";
@@ -81,7 +82,7 @@ $movimentacoes = $stmt->fetchAll();
 
 $lojas = $pdo->query('SELECT id, nome FROM lojas WHERE ativo = 1 ORDER BY nome')->fetchAll();
 $usuarios = $pdo->query('SELECT id, nome FROM usuarios WHERE ativo = 1 ORDER BY nome')->fetchAll();
-$produtos = $pdo->query('SELECT id, nome FROM produtos WHERE ativo = 1 ORDER BY nome')->fetchAll();
+$produtos = $pdo->query('SELECT DISTINCT p.id, p.nome FROM estoque_equipamentos e INNER JOIN produtos p ON p.id = e.produto_id WHERE p.ativo = 1 ORDER BY p.nome')->fetchAll();
 $statusList = $pdo->query("SELECT DISTINCT status FROM movimentacoes WHERE status IS NOT NULL AND status <> '' ORDER BY status")->fetchAll();
 
 adminPageStart('Movimentações');
@@ -161,7 +162,7 @@ adminPageStart('Movimentações');
     </label>
     <label>Solicitante<input type="text" name="solicitante" value="<?php echo e($_GET['solicitante'] ?? ''); ?>" placeholder="Nome"></label>
     <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
-        <select name="limite">
+        <select name="limite" onchange="this.form.submit()">
             <?php foreach ($allowedLimits as $limit): ?>
                 <option value="<?php echo $limit; ?>" <?php echo $perPage === $limit ? 'selected' : ''; ?>><?php echo $limit; ?></option>
             <?php endforeach; ?>

@@ -698,3 +698,17 @@ body.login-page {
         font-size: 0.9em;
     }
 }
+
+@media (max-width: 520px) {
+    body.login-page { min-height: 100dvh; }
+    .login-container { min-height: 100dvh; padding: 18px; align-items: center; }
+    .login-box { max-width: none; padding: 30px 22px 28px; border-radius: 10px; }
+    .login-box .logo-area { margin-bottom: 20px; }
+    .login-box h1 { font-size: 1.62rem; margin-bottom: 10px; }
+    .login-box .subtitulo { font-size: .86rem; margin-bottom: 22px; }
+    .login-box .form .grupo { margin-bottom: 16px; }
+    .login-box .form label { font-size: .84rem; }
+    .login-box .form input { min-height: 48px; font-size: 16px; }
+    .login-box .btn { min-height: 48px; font-size: 1rem; }
+    .login-box .mensagem { font-size: .9rem; line-height: 1.35; }
+}

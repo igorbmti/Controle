@@ -45,7 +45,7 @@ adminPageStart('Atividades');
 </section>
 <form class="panel filters" method="GET">
     <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
-        <select name="limite">
+        <select name="limite" onchange="this.form.submit()">
             <?php foreach ($allowedLimits as $limit): ?>
                 <option value="<?php echo $limit; ?>" <?php echo $perPage === $limit ? 'selected' : ''; ?>><?php echo $limit; ?></option>
             <?php endforeach; ?>

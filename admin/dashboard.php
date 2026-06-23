@@ -2074,15 +2074,15 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .donut-canvas {
             position: relative;
-            width: 160px;
-            height: 160px;
+            width: 168px;
+            height: 168px;
             z-index: 10;
             justify-self: center;
         }
 
         .donut-canvas canvas {
             opacity: 0;
-            animation: chartFadeIn .7s ease .08s forwards;
+            animation: chartFadeIn .82s ease .08s forwards;
         }
 
         @keyframes chartFadeIn {
@@ -2221,15 +2221,15 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .donut-wrap {
             display: grid;
-            grid-template-columns: 172px minmax(0, 1fr);
+            grid-template-columns: 180px minmax(0, 1fr);
             align-items: center;
-            gap: 12px;
-            padding: 18px 20px 20px;
+            gap: 16px;
+            padding: 20px 22px 22px;
         }
 
         .donut-center {
             position: absolute;
-            inset: 35px;
+            inset: 38px;
             border-radius: 50%;
             background: #10151c;
             display: grid;
@@ -2240,14 +2240,16 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .donut-center strong {
             display: block;
-            font-size: 22px;
-            line-height: 1.05;
+            font-size: 28px;
+            line-height: 1;
+            letter-spacing: 0;
         }
 
         .donut-center span {
-            color: #dfe4ec;
-            font-size: 12px;
-            line-height: 1.25;
+            color: #cbd3df;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1.15;
         }
 
         .type-list {
@@ -2841,9 +2843,101 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 flex-direction: column;
             }
         }
+
+        .mobile-menu-toggle,
+        .mobile-sidebar-backdrop {
+            display: none;
+        }
+
+        @media (max-width: 860px) {
+            body { overflow-x:hidden; }
+            body.menu-open { overflow: hidden; }
+            .mobile-menu-toggle {
+                position: fixed;
+                top: 14px;
+                left: 14px;
+                z-index: 1301;
+                width: 44px;
+                height: 44px;
+                border: 1px solid rgba(255,255,255,.12);
+                border-radius: 10px;
+                background: rgba(14,18,25,.94);
+                color: #fff;
+                display: inline-grid;
+                place-items: center;
+                font-size: 22px;
+                font-weight: 800;
+                box-shadow: 0 12px 32px rgba(0,0,0,.32);
+            }
+            .mobile-sidebar-backdrop {
+                position: fixed;
+                inset: 0;
+                z-index: 1290;
+                display: block;
+                background: rgba(0,0,0,.58);
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity .22s ease;
+            }
+            body.menu-open .mobile-sidebar-backdrop { opacity: 1; pointer-events: auto; }
+            .app { grid-template-columns: 1fr !important; }
+            .sidebar {
+                position: fixed !important;
+                inset: 0 auto 0 0;
+                width: min(82vw, 302px);
+                height: 100dvh !important;
+                z-index: 1300;
+                padding: 26px 20px 22px !important;
+                transform: translateX(-104%);
+                transition: transform .24s ease;
+                overflow-y: auto;
+                box-shadow: 24px 0 52px rgba(0,0,0,.42);
+            }
+            body.menu-open .sidebar { transform: translateX(0); }
+            .sidebar .nav { grid-template-columns: 1fr !important; }
+            .sidebar-footer { margin-top: auto !important; }
+            .topbar { min-height: 64px; height: 64px; padding: 0 16px 0 70px !important; justify-content: flex-end !important; }
+            .mobile-menu { display: none !important; }
+            .content { padding: 18px 14px 28px !important; }
+            .page-title { gap: 14px; align-items: center !important; }
+            .page-title h1 { font-size: 24px; }
+            .page-title p { font-size: 13px; }
+            .cards, .dashboard-filters, .dashboard-grid { grid-template-columns: 1fr !important; }
+            .metric-card { min-height: auto; grid-template-columns: 50px minmax(0, 1fr); padding: 16px; }
+            .panel-header { align-items: flex-start; gap: 10px; flex-direction: column; }
+            .heatmap-grid { grid-template-columns: 1fr !important; padding: 14px; }
+            .heatmap-tile { height: auto; min-height: 86px; }
+            .donut-wrap { grid-template-columns: 1fr !important; justify-items: center; padding: 18px 16px; }
+            .type-list { width: 100%; }
+            .top-product-row, .alert-row, .activity-row { align-items: flex-start; }
+            .ops-center { min-height: 112px; }
+            .pagination { justify-content: center; flex-wrap: wrap; }
+            .table-wrap { overflow: visible; }
+            .recent-panel table { min-width: 0 !important; border-collapse: separate; border-spacing: 0 10px; }
+            .recent-panel thead { display: none; }
+            .recent-panel tbody { display: grid; gap: 10px; }
+            .recent-panel tr { display: block; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: rgba(255,255,255,.035); padding: 10px 12px; }
+            .recent-panel td { display: flex; justify-content: space-between; gap: 14px; border: 0 !important; padding: 9px 0 !important; white-space: normal; text-align: right; overflow-wrap: anywhere; }
+            .recent-panel td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .45px; text-align: left; flex: 0 0 42%; }
+            .recent-panel td[colspan] { display: block; text-align: center; color: var(--muted); }
+            .recent-panel td[colspan]::before { content: none; }
+        }
+
+        @media (max-width: 420px) {
+            .title-icon { width: 52px !important; height: 52px !important; }
+            .rubiks-cube { width: 28px; height: 28px; }
+            .page-title h1 { font-size: 22px; }
+            .dashboard-filters { padding: 14px; }
+            .metric-value { font-size: 22px; }
+            .donut-canvas { width: 150px; height: 150px; }
+            .donut-center { inset: 34px; }
+            .ghost-button { width: 100%; justify-content: center; }
+        }
     </style>
 </head>
 <body>
+    <button class="mobile-menu-toggle" type="button" aria-label="Abrir menu" aria-expanded="false">☰</button>
+    <div class="mobile-sidebar-backdrop" data-close-menu></div>
     <div class="app">
         <aside class="sidebar">
             <div class="brand" aria-label="Bigmais">
@@ -3651,7 +3745,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                cutout: '62%',
+                cutout: '64%',
                 interaction: {
                     mode: 'nearest',
                     intersect: true
@@ -3659,8 +3753,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 animation: {
                     animateRotate: true,
                     animateScale: true,
-                    duration: 850,
-                    easing: 'easeOutQuart'
+                    duration: 900,
+                    easing: 'easeOutCubic'
                 },
                 plugins: {
                     legend: { display: false },
@@ -3689,7 +3783,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 month: '2-digit',
                 year: 'numeric',
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                timeZone: 'America/Sao_Paulo'
             }).format(date);
         }
 
@@ -3698,7 +3793,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             if (Number.isNaN(date.getTime())) return '-';
             return new Intl.DateTimeFormat('pt-BR', {
                 day: '2-digit',
-                month: '2-digit'
+                month: '2-digit',
+                timeZone: 'America/Sao_Paulo'
             }).format(date);
         }
 
@@ -3708,11 +3804,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             const day = new Intl.DateTimeFormat('pt-BR', {
                 day: '2-digit',
                 month: '2-digit',
-                year: 'numeric'
+                year: 'numeric',
+                timeZone: 'America/Sao_Paulo'
             }).format(date);
             const time = new Intl.DateTimeFormat('pt-BR', {
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                timeZone: 'America/Sao_Paulo'
             }).format(date);
             return `${day} ${time}`;
         }
@@ -4009,6 +4107,32 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             applyDashboardFilters();
         });
 
+        function prepareResponsiveTables() {
+            document.querySelectorAll('table').forEach((table) => {
+                const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+                table.querySelectorAll('tbody tr').forEach((row) => {
+                    Array.from(row.children).forEach((cell, index) => {
+                        if (!cell.hasAttribute('data-label') && headers[index]) cell.setAttribute('data-label', headers[index]);
+                    });
+                });
+            });
+        }
+
+        function setupMobileMenu() {
+            const toggle = document.querySelector('.mobile-menu-toggle');
+            const backdrop = document.querySelector('.mobile-sidebar-backdrop');
+            const closeMenu = () => {
+                document.body.classList.remove('menu-open');
+                toggle?.setAttribute('aria-expanded', 'false');
+            };
+            toggle?.addEventListener('click', () => {
+                const isOpen = document.body.classList.toggle('menu-open');
+                toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            });
+            backdrop?.addEventListener('click', closeMenu);
+            document.querySelectorAll('.sidebar a').forEach((link) => link.addEventListener('click', closeMenu));
+            document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
+        }
         document.addEventListener('click', (event) => {
             const link = event.target.closest('a[href]');
             if (!link || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -4020,6 +4144,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             setTimeout(() => { window.location.href = link.href; }, 180);
         });
 
+        prepareResponsiveTables();
+        setupMobileMenu();
         renderRecentes(initialRecentes);
         renderMapaCalor(initialDashboard.graficoPrincipal?.lojas || [], initialDashboard.graficoPrincipal?.loja_ids || selectedLojaIds);
         setupActivityReveal();

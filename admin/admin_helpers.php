@@ -193,6 +193,29 @@ function adminPageStart(string $title): void
                 padding: 0 18px 18px;
                 font-size: 13px;
             }
+
+            @media (max-width: 720px) {
+                body { overflow-x: hidden; }
+                .page { padding: 16px; }
+                .top { gap: 14px; }
+                .top h1 { font-size: 24px; line-height: 1.15; }
+                .top p { font-size: 13px; }
+                .panel { border-radius: 8px; }
+                .filters, .form-grid, .detail-grid, .users-toolbar, .stock-form, .stock-search, .maintenance-form, .maintenance-filter, .mov-filters { grid-template-columns: 1fr !important; }
+                .filter-actions, .action-row, .stock-actions, .maintenance-actions { width: 100%; justify-content: stretch !important; flex-direction: column; align-items: stretch; }
+                .btn, button, .filter-actions .btn, .action-row .btn { min-height: 44px; width: 100%; justify-content: center; }
+                input, select, textarea { min-height: 44px; font-size: 16px; }
+                .table-wrap { overflow: visible; }
+                table { min-width: 0 !important; width: 100%; border-collapse: separate; border-spacing: 0 10px; table-layout: auto !important; }
+                thead { display: none; }
+                tbody { display: grid; gap: 10px; }
+                tr { display: block; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: rgba(255,255,255,.035); padding: 10px 12px; }
+                td { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border: 0 !important; padding: 9px 0 !important; white-space: normal !important; overflow-wrap: anywhere; text-align: right; }
+                td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .45px; text-align: left; flex: 0 0 42%; }
+                td[colspan] { display: block; text-align: center; color: var(--muted); }
+                td[colspan]::before { content: none; }
+                .pagination { justify-content: center; flex-wrap: wrap; }
+            }
             @media (max-width: 980px) {
                 .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
                 .top { align-items: flex-start; flex-direction: column; }
@@ -213,6 +236,14 @@ function adminPageEnd(): void
     ?>
     </main>
     <script>
+        document.querySelectorAll('table').forEach((table) => {
+            const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+            table.querySelectorAll('tbody tr').forEach((row) => {
+                Array.from(row.children).forEach((cell, index) => {
+                    if (!cell.hasAttribute('data-label') && headers[index]) cell.setAttribute('data-label', headers[index]);
+                });
+            });
+        });
         document.addEventListener('click', (event) => {
             const link = event.target.closest('a[href]');
             if (!link || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
