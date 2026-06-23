@@ -429,7 +429,7 @@ tr:last-child td {
     margin-bottom: 20px;
     font-weight: 500;
     animation: mensagemEntrada 0.24s ease both;
-    transition: opacity 0.28s ease, transform 0.28s ease;
+    transition: opacity 0.26s ease, transform 0.26s ease;
 }
 
 .mensagem.ocultando {

@@ -1234,8 +1234,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             background:
                 radial-gradient(circle at 70% 0%, rgba(40, 48, 62, .24), transparent 35%),
                 linear-gradient(135deg, #040609 0%, #081018 52%, #05070b 100%);
-            animation: pageFadeIn .24s ease both;
-            transition: opacity .22s ease, transform .22s ease;
+            animation: pageFadeIn .26s ease both;
+            transition: opacity .26s ease, transform .26s ease;
         }
 
         @media (min-width: 1024px) {
@@ -1458,7 +1458,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             gap: 10px;
             color: #fff;
             font-weight: 700;
-            min-height: 44px;
+            min-height: 46px;
             width: 100%;
             padding: 0 12px;
             border: 1px solid transparent;
@@ -1489,8 +1489,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         .hello {
             display: flex;
             align-items: center;
-            gap: 16px;
-            font-size: 17px;
+            gap: 14px;
+            font-size: 18px;
         }
 
         .hello strong {
@@ -1659,12 +1659,12 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .metric-card {
-            height: 148px;
-            min-height: 148px;
-            padding: 18px 20px;
+            height: 136px;
+            min-height: 136px;
+            padding: 16px 18px;
             display: grid;
-            grid-template-columns: 50px minmax(0, 1fr);
-            gap: 16px;
+            grid-template-columns: 46px minmax(0, 1fr);
+            gap: 14px;
             align-items: center;
             overflow: hidden;
             transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
@@ -1693,8 +1693,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .metric-icon {
-            width: 48px;
-            height: 48px;
+            width: 46px;
+            height: 46px;
             border-radius: var(--radius);
             display: grid;
             place-items: center;
@@ -1703,8 +1703,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .metric-icon svg {
-            width: 24px;
-            height: 24px;
+            width: 22px;
+            height: 22px;
         }
 
         .metric-icon.red { background: linear-gradient(135deg, var(--red), var(--red-2)); }
@@ -1716,7 +1716,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             color: rgba(255, 255, 255, .65);
             font-size: 12px;
             line-height: 1.2;
-            margin: 0 0 10px;
+            margin: 0 0 8px;
             font-weight: 700;
             letter-spacing: .8px;
             text-transform: uppercase;
@@ -1736,7 +1736,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         .metric-value {
             font-size: 24px;
             font-weight: 700;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             line-height: 1.15;
             color: #fff;
             max-width: 100%;
@@ -1823,7 +1823,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .top-product-row {
-            min-height: 44px;
+            min-height: 48px;
             display: grid;
             grid-template-columns: 42px minmax(0, 1fr) auto;
             align-items: center;
@@ -2012,7 +2012,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .panel-header h2 {
             margin: 0;
-            font-size: 17px;
+            font-size: 18px;
         }
 
         .ghost-button {
@@ -2197,7 +2197,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .bars {
             height: 170px;
-            width: 46px;
+            width: 48px;
             display: flex;
             justify-content: center;
             align-items: flex-end;
@@ -2526,7 +2526,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 14px;
+            gap: 16px;
             padding: 18px 20px;
             color: #e4e8ef;
             font-size: 14px;
@@ -2849,7 +2849,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             display: none;
         }
 
-        @media (max-width: 860px) {
+        @media (max-width: 768px) {
             body { overflow-x:hidden; }
             body.menu-open { overflow: hidden; }
             .mobile-menu-toggle {
@@ -2899,26 +2899,38 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             .topbar { min-height: 64px; height: 64px; padding: 0 16px 0 70px !important; justify-content: flex-end !important; }
             .mobile-menu { display: none !important; }
             .content { padding: 18px 14px 28px !important; }
-            .page-title { gap: 14px; align-items: center !important; }
+            .page-title { gap: 16px; align-items: center !important; }
             .page-title h1 { font-size: 24px; }
             .page-title p { font-size: 13px; }
             .cards, .dashboard-filters, .dashboard-grid { grid-template-columns: 1fr !important; }
-            .metric-card { min-height: auto; grid-template-columns: 50px minmax(0, 1fr); padding: 16px; }
+            .metric-card { min-height: auto; grid-template-columns: 46px minmax(0, 1fr); padding: 16px; }
             .panel-header { align-items: flex-start; gap: 10px; flex-direction: column; }
+            .recent-panel .panel-header { flex-direction: row; align-items: center; justify-content: space-between; }
+            .recent-panel .panel-header h2 { font-size: 16px; line-height: 1.2; }
             .heatmap-grid { grid-template-columns: 1fr !important; padding: 14px; }
             .heatmap-tile { height: auto; min-height: 86px; }
-            .donut-wrap { grid-template-columns: 1fr !important; justify-items: center; padding: 18px 16px; }
-            .type-list { width: 100%; }
-            .top-product-row, .alert-row, .activity-row { align-items: flex-start; }
+            .donut-wrap { grid-template-columns: 1fr !important; justify-items: center; padding: 18px 16px 20px; gap: 16px; }
+            .donut-canvas { width: 164px; height: 164px; }
+            .type-list { width: 100%; gap: 8px; }
+            .type-row { min-height: 42px; padding: 9px 10px; }
+            .top-products { padding: 14px; }
+            .top-product-row { grid-template-columns: 38px minmax(0, 1fr) auto; min-height: 52px; padding: 8px 10px; }
+            .top-product-name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+            .alert-list, .activity-list { padding: 0 16px 14px; }
+            .top-product-row, .alert-row, .activity-row { align-items: center; }
             .ops-center { min-height: 112px; }
-            .pagination { justify-content: center; flex-wrap: wrap; }
+            .pagination { justify-content: center; flex-wrap: wrap; gap: 8px; }
             .table-wrap { overflow: visible; }
-            .recent-panel table { min-width: 0 !important; border-collapse: separate; border-spacing: 0 10px; }
+            .recent-panel table { min-width: 0 !important; width: 100%; border-collapse: separate; border-spacing: 0 10px; table-layout: auto; }
             .recent-panel thead { display: none; }
             .recent-panel tbody { display: grid; gap: 10px; }
-            .recent-panel tr { display: block; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: rgba(255,255,255,.035); padding: 10px 12px; }
-            .recent-panel td { display: flex; justify-content: space-between; gap: 14px; border: 0 !important; padding: 9px 0 !important; white-space: normal; text-align: right; overflow-wrap: anywhere; }
-            .recent-panel td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .45px; text-align: left; flex: 0 0 42%; }
+            .recent-panel tr { display: grid; gap: 0; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: rgba(255,255,255,.035); padding: 10px 12px; box-shadow: 0 10px 24px rgba(0,0,0,.12); }
+            .recent-panel td { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 12px; border: 0 !important; padding: 8px 0 !important; white-space: normal !important; text-align: left; overflow: visible; overflow-wrap: anywhere; }
+            .recent-panel td::before { content: attr(data-label); color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .45px; text-align: left; min-width: 0; }
+            .recent-panel td > * { min-width: 0; }
+            .recent-panel .kind { width: max-content; min-width: 74px; }
+            .recent-panel .badge { min-height: 24px; padding: 0 9px; font-size: 12px; }
+            .recent-panel .status-with-reason { justify-content: flex-start; }
             .recent-panel td[colspan] { display: block; text-align: center; color: var(--muted); }
             .recent-panel td[colspan]::before { content: none; }
         }
@@ -2932,6 +2944,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             .donut-canvas { width: 150px; height: 150px; }
             .donut-center { inset: 34px; }
             .ghost-button { width: 100%; justify-content: center; }
+            .recent-panel .panel-header .ghost-button { width: auto; min-width: 78px; padding: 0 10px; }
+            .recent-panel td { grid-template-columns: 88px minmax(0, 1fr); }
         }
     </style>
 </head>
@@ -3076,7 +3090,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                             <div class="metric-title">ITEM MAIS TROCADO</div>
                             <?php if ((int) $topTrocaMes['total'] > 0): ?>
                                 <div class="metric-value" data-fit-text id="cardTrocaValue" title="<?php echo e($topTrocaMes['equipamento']); ?>"><?php echo e($topTrocaMes['equipamento']); ?></div>
-                                <div class="metric-meta" id="cardTrocaMeta"><?php echo (int) $topTrocaMes['total']; ?> trocas</div>
+                                <div class="metric-meta" id="cardTrocaMeta"><?php echo (int) $topTrocaMes['total']; ?> itens trocados</div>
                             <?php else: ?>
                                 <div class="metric-value" data-fit-text id="cardTrocaValue" title="Nenhuma">Nenhuma</div>
                                 <div class="metric-meta" id="cardTrocaMeta"></div>
@@ -3539,7 +3553,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
             trocaValue.textContent = Number(troca.total || 0) > 0 ? troca.equipamento : 'Nenhuma';
             trocaValue.title = trocaValue.textContent;
-            trocaMeta.textContent = Number(troca.total || 0) > 0 ? `${Number(troca.total)} trocas` : '';
+            trocaMeta.textContent = Number(troca.total || 0) > 0 ? `${Number(troca.total)} itens trocados` : '';
 
             const itensCriticos = Number(estoque.itens || 0);
             estoqueIcon.className = `metric-icon ${itensCriticos > 0 ? 'danger' : 'ok'}`;
@@ -4141,7 +4155,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
             event.preventDefault();
             document.body.classList.add('page-leaving');
-            setTimeout(() => { window.location.href = link.href; }, 180);
+            setTimeout(() => { window.location.href = link.href; }, 230);
         });
 
         prepareResponsiveTables();

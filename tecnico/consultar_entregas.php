@@ -207,7 +207,7 @@ if ($detalheId > 0) {
     <style>
         :root { --bg:#05080c; --panel:#10151c; --line:#242c37; --text:#f7f8fb; --muted:#a7b0be; --red:#e50914; --green:#27b84d; --radius:8px; --soft:#717b8b; }
         * { box-sizing: border-box; }
-        body { margin:0; min-height:100vh; color:var(--text); font-family:"Inter","Segoe UI",Arial,sans-serif; background:radial-gradient(circle at 70% 0%, rgba(40,48,62,.24), transparent 35%),linear-gradient(135deg,#040609 0%,#081018 52%,#05070b 100%); animation:pageFadeIn .24s ease both; transition:opacity .22s ease,transform .22s ease; }
+        body { margin:0; min-height:100vh; color:var(--text); font-family:"Inter","Segoe UI",Arial,sans-serif; background:radial-gradient(circle at 70% 0%, rgba(40,48,62,.24), transparent 35%),linear-gradient(135deg,#040609 0%,#081018 52%,#05070b 100%); animation:pageFadeIn .26s ease both; transition:opacity .26s ease,transform .26s ease; }
         @media (min-width:1024px){ body{ zoom:.82; min-height:122vh; } }
         body.page-leaving { opacity:0; transform:translateY(4px); }
         @keyframes pageFadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
@@ -282,7 +282,7 @@ if ($detalheId > 0) {
 
         .mobile-menu-toggle,
         .mobile-sidebar-backdrop { display:none; }
-        @media (max-width:860px) {
+        @media (max-width:768px) {
             body { overflow-x:hidden; }
             body.menu-open { overflow:hidden; }
             .mobile-menu-toggle { position:fixed; top:14px; left:14px; z-index:1301; width:44px; height:44px; border:1px solid rgba(255,255,255,.12); border-radius:10px; background:rgba(14,18,25,.94); color:#fff; display:inline-grid; place-items:center; font-size:22px; font-weight:800; box-shadow:0 12px 32px rgba(0,0,0,.32); }
@@ -304,12 +304,13 @@ if ($detalheId > 0) {
             .submit, .btn { width:100%; min-height:46px; justify-content:center; }
             input, select, textarea { font-size:16px; }
             .table-wrap { overflow:visible !important; }
-            table { min-width:0 !important; width:100%; border-collapse:separate; border-spacing:0 10px; }
+            table { min-width:0 !important; width:100%; border-collapse:separate; border-spacing:0 10px; table-layout:auto !important; }
             thead { display:none; }
             tbody { display:grid; gap:10px; }
-            tr { display:block; border:1px solid rgba(255,255,255,.08); border-radius:8px; background:rgba(255,255,255,.035); padding:10px 12px; }
-            td { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; border:0 !important; padding:9px 0 !important; white-space:normal !important; text-align:right; overflow-wrap:anywhere; }
-            td::before { content:attr(data-label); color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.45px; text-align:left; flex:0 0 42%; }
+            tr { display:grid; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.035); padding:10px 12px; box-shadow:0 10px 24px rgba(0,0,0,.12); }
+            td { display:grid; grid-template-columns:96px minmax(0,1fr); align-items:center; gap:12px; border:0 !important; padding:8px 0 !important; white-space:normal !important; text-align:left; overflow:visible; overflow-wrap:anywhere; }
+            td::before { content:attr(data-label); color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.45px; text-align:left; min-width:0; }
+            td > * { min-width:0; }
             td[colspan] { display:block; text-align:center; color:var(--muted); }
             td[colspan]::before { content:none; }
             .pagination { justify-content:center; flex-wrap:wrap; }
@@ -486,7 +487,7 @@ if ($detalheId > 0) {
         if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
         event.preventDefault();
         document.body.classList.add('page-leaving');
-        setTimeout(() => { window.location.href = link.href; }, 180);
+        setTimeout(() => { window.location.href = link.href; }, 230);
     });
 </script>
 </body>

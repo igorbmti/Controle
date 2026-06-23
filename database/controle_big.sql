@@ -1,4 +1,4 @@
-﻿-- MariaDB dump 10.19  Distrib 10.4.32-MariaDB, for Win64 (AMD64)
+-- MariaDB dump 10.19  Distrib 10.4.32-MariaDB, for Win64 (AMD64)
 --
 -- Host: localhost    Database: controle_big
 -- ------------------------------------------------------
@@ -100,7 +100,7 @@ CREATE TABLE `estoque_equipamentos` (
 
 LOCK TABLES `estoque_equipamentos` WRITE;
 /*!40000 ALTER TABLE `estoque_equipamentos` DISABLE KEYS */;
-INSERT INTO `estoque_equipamentos` VALUES (3,3,3,183,'2026-06-13 12:02:46'),(4,4,1,17,'2026-06-14 21:09:58'),(5,5,2,56,'2026-06-22 22:19:46'),(7,15,NULL,5,'2026-06-20 11:40:39'),(8,16,NULL,4,'2026-06-21 09:23:05'),(9,17,NULL,2,'2026-06-23 06:56:32');
+INSERT INTO `estoque_equipamentos` VALUES (3,3,3,183,'2026-06-13 12:02:46'),(4,4,1,17,'2026-06-14 21:09:58'),(5,5,2,56,'2026-06-22 22:19:46'),(7,15,NULL,5,'2026-06-20 11:40:39'),(8,16,NULL,4,'2026-06-21 09:23:05'),(9,17,NULL,4,'2026-06-23 07:18:11');
 /*!40000 ALTER TABLE `estoque_equipamentos` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -518,58 +518,6 @@ SET character_set_client = utf8;
 SET character_set_client = @saved_cs_client;
 
 --
--- Dumping events for database 'controle_big'
---
-
---
--- Dumping routines for database 'controle_big'
---
-/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION' */ ;
-/*!50003 DROP PROCEDURE IF EXISTS `sp_registrar_movimentacao` */;
-/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
-/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
-/*!50003 SET @saved_col_connection = @@collation_connection */ ;
-/*!50003 SET character_set_client  = cp850 */ ;
-/*!50003 SET character_set_results = cp850 */ ;
-/*!50003 SET collation_connection  = cp850_general_ci */ ;
-DELIMITER ;;
-CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_registrar_movimentacao`(
-  IN p_tipo VARCHAR(20),
-  IN p_produto_id INT,
-  IN p_item_id INT,
-  IN p_loja_id INT,
-  IN p_setor_id INT,
-  IN p_funcionario_id INT,
-  IN p_solicitante_nome VARCHAR(150),
-  IN p_quantidade INT,
-  IN p_status VARCHAR(30),
-  IN p_justificativa TEXT,
-  IN p_usuario_id INT
-)
-BEGIN
-  INSERT INTO movimentacoes (
-    tipo, produto_id, item_id, loja_id, setor_id, funcionario_id,
-    solicitante_nome, quantidade, status, justificativa, descricao, usuario_id
-  )
-  VALUES (
-    p_tipo, p_produto_id, p_item_id, p_loja_id, p_setor_id, p_funcionario_id,
-    p_solicitante_nome, p_quantidade, p_status, p_justificativa,
-    CONCAT(p_solicitante_nome, ' registrou ', LOWER(p_tipo), ' de equipamento.'),
-    p_usuario_id
-  );
-
-  IF p_item_id IS NOT NULL AND p_tipo = 'Entrega' THEN
-    UPDATE itens SET status = 'Em Uso' WHERE id = p_item_id;
-  END IF;
-END ;;
-DELIMITER ;
-/*!50003 SET sql_mode              = @saved_sql_mode */ ;
-/*!50003 SET character_set_client  = @saved_cs_client */ ;
-/*!50003 SET character_set_results = @saved_cs_results */ ;
-/*!50003 SET collation_connection  = @saved_col_connection */ ;
-
---
 -- Final view structure for view `vw_consulta_movimentacoes`
 --
 
@@ -668,4 +616,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-06-23  6:57:44
+-- Dump completed on 2026-06-23  7:38:00
