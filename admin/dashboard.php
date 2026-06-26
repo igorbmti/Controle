@@ -121,6 +121,25 @@ function pluralAtendimentos(int $total): string
     return $total . ' ' . ($total === 1 ? 'atendimento' : 'atendimentos');
 }
 
+function formatPercentualMovimentacoes(float $valor, string $direcao): string
+{
+    if ($direcao === 'flat') {
+        return '0%';
+    }
+
+    $sinal = $direcao === 'up' ? '+' : '-';
+    return $sinal . number_format(abs($valor), 1, ',', '.') . '%';
+}
+
+function safeIntFromArray(array $row, string $key, int $default = 0): int
+{
+    if (!array_key_exists($key, $row) || !is_numeric($row[$key])) {
+        return $default;
+    }
+
+    return (int) $row[$key];
+}
+
 function textoMapaAtendimentos(int $total): string
 {
     if ($total === 0) {
@@ -440,12 +459,15 @@ function recentBaseSql(): string
                 COALESCE(l.nome, '-') AS loja,
                 m.loja_id,
                 COALESCE(p.nome, '-') AS equipamento,
+                COALESCE(NULLIF(i.serial, ''), 'N/A') AS serial,
+
                 m.tipo,
                 m.status
             FROM movimentacoes m
             LEFT JOIN funcionarios f ON f.id = m.funcionario_id
             LEFT JOIN lojas l ON l.id = m.loja_id
             LEFT JOIN produtos p ON p.id = m.produto_id
+            LEFT JOIN itens i ON i.id = m.item_id
             LEFT JOIN usuarios u ON u.id = m.usuario_id
         ) recentes
     ";
@@ -682,6 +704,98 @@ function fetchLojaMaiorDemanda(array $filters): array
     return $grouped[0];
 }
 
+function fetchTotalMovimentacoes(array $filters): array
+{
+    $default = [
+        'total' => 0,
+        'anterior' => 0,
+        'variacao' => 0.0,
+        'direcao' => 'flat',
+    ];
+
+    [$whereSql, $params] = buildMovimentacaoWhere($filters);
+    $tipoSql = ($whereSql ? 'AND' : 'WHERE') . " UPPER(m.tipo) IN ('ENTREGA', 'TROCA')";
+
+    $rowAtual = fetchOnePrepared(
+        "
+        SELECT COUNT(*) AS total
+        FROM movimentacoes m
+        {$whereSql}
+        {$tipoSql}
+        ",
+        $params,
+        ['total' => 0]
+    );
+
+    $rowAtual = is_array($rowAtual) ? $rowAtual : [];
+    $totalAtual = max(0, safeIntFromArray($rowAtual, 'total'));
+
+    $dataInicial = (string) ($filters['data_inicial'] ?? '');
+    $dataFinal = (string) ($filters['data_final'] ?? '');
+    $totalAnterior = 0;
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataInicial) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataFinal)) {
+        try {
+            $inicio = new DateTimeImmutable($dataInicial);
+            $fim = new DateTimeImmutable($dataFinal);
+
+            if ($fim >= $inicio) {
+                $dias = $inicio->diff($fim)->days + 1;
+                $previousFilters = $filters;
+                $fimDoMesAtual = $inicio->modify('last day of this month');
+                $periodoMesCompleto = $inicio->format('d') === '01' && $fim->format('Y-m-d') === $fimDoMesAtual->format('Y-m-d');
+
+                if ($periodoMesCompleto) {
+                    $previousStart = $inicio->modify('first day of previous month');
+                    $previousEnd = $inicio->modify('last day of previous month');
+                } else {
+                    $previousEnd = $inicio->modify('-1 day');
+                    $previousStart = $previousEnd->modify('-' . ($dias - 1) . ' days');
+                }
+
+                $previousFilters['data_inicial'] = $previousStart->format('Y-m-d');
+                $previousFilters['data_final'] = $previousEnd->format('Y-m-d');
+
+                [$previousWhereSql, $previousParams] = buildMovimentacaoWhere($previousFilters);
+                $previousTipoSql = ($previousWhereSql ? 'AND' : 'WHERE') . " UPPER(m.tipo) IN ('ENTREGA', 'TROCA')";
+                $rowAnterior = fetchOnePrepared(
+                    "
+                    SELECT COUNT(*) AS total
+                    FROM movimentacoes m
+                    {$previousWhereSql}
+                    {$previousTipoSql}
+                    ",
+                    $previousParams,
+                    ['total' => 0]
+                );
+
+                $rowAnterior = is_array($rowAnterior) ? $rowAnterior : [];
+                $totalAnterior = max(0, safeIntFromArray($rowAnterior, 'total'));
+            }
+        } catch (Throwable $e) {
+            error_log('Dashboard total movimentacoes period error: ' . $e->getMessage());
+            return array_merge($default, ['total' => $totalAtual]);
+        }
+    }
+
+    $variacao = 0.0;
+    if ($totalAnterior > 0) {
+        $variacao = (($totalAtual - $totalAnterior) / $totalAnterior) * 100;
+    } elseif ($totalAtual > 0) {
+        $variacao = 100.0;
+    }
+
+    if ($totalAtual === 0 && $totalAnterior === 0) {
+        $variacao = 0.0;
+    }
+
+    return [
+        'total' => $totalAtual,
+        'anterior' => $totalAnterior,
+        'variacao' => round($variacao, 1),
+        'direcao' => $variacao > 0 ? 'up' : ($variacao < 0 ? 'down' : 'flat'),
+    ];
+}
 function fetchSetorMaiorOperacao(array $filters): array
 {
     [$whereSql, $params] = buildMovimentacaoWhere($filters);
@@ -721,16 +835,12 @@ function fetchEstoqueCritico(array $filters = [], int $minimo = 2): array
 
 function fetchCardsGerenciais(array $filters, string $perfilColumn): array
 {
-    $demandaFilters = $filters;
-    $demandaFilters['loja_ids'] = [];
-    $demandaFilters['usuario_id'] = 0;
-
     $estoqueFilters = $filters;
     $estoqueFilters['loja_ids'] = [];
     $estoqueFilters['usuario_id'] = 0;
 
     return [
-        'lojaMaiorDemanda' => fetchLojaMaiorDemanda($demandaFilters),
+        'totalMovimentacoes' => fetchTotalMovimentacoes($filters),
         'setorMaiorOperacao' => fetchSetorMaiorOperacao($filters),
         'topTroca' => fetchTopProdutoPorTipo($filters, 'TROCA'),
         'estoqueCritico' => fetchEstoqueCritico($estoqueFilters),
@@ -993,6 +1103,8 @@ function fetchRecentesGerencial(array $filters, int $limit = 5): array
                 COALESCE(u.nome, '-') AS usuario,
                 COALESCE(l.nome, '-') AS loja,
                 COALESCE(p.nome, '-') AS equipamento,
+                COALESCE(NULLIF(i.serial, ''), 'N/A') AS serial,
+
                 COALESCE(m.solicitante_nome, f.nome, '-') AS solicitante,
                 m.tipo,
                 m.status,
@@ -1001,6 +1113,7 @@ function fetchRecentesGerencial(array $filters, int $limit = 5): array
             LEFT JOIN usuarios u ON u.id = m.usuario_id
             LEFT JOIN lojas l ON l.id = m.loja_id
             LEFT JOIN produtos p ON p.id = m.produto_id
+            LEFT JOIN itens i ON i.id = m.item_id
             LEFT JOIN funcionarios f ON f.id = m.funcionario_id
             {$whereSql}
             ORDER BY m.data_movimentacao DESC, m.id DESC
@@ -1022,61 +1135,57 @@ function fetchRecentesGerencial(array $filters, int $limit = 5): array
     }
 }
 
-function fetchAtividadesGerencial(array $filters, int $limit = 3): array
+function dashboardUsuarioAtual(): string
 {
-    [$whereSql, $params] = buildMovimentacaoWhere($filters);
-    [$manutencaoWhere, $manutencaoParams] = tableExists('manutencoes')
-        ? buildManutencaoWhere($filters)
-        : ['', []];
-    $params[':limit'] = $limit;
+    $nome = trim((string) ($_SESSION['nome'] ?? 'Administrador'));
+    return $nome !== '' ? $nome : 'Administrador';
+}
 
-    try {
-        $manutencaoSql = tableExists('manutencoes')
-            ? "
-            UNION ALL
-            SELECT
-                mt.data_registro AS data_entrega,
-                COALESCE(u.nome, '-') AS usuario,
-                COALESCE(p.nome, pi.nome, '-') AS equipamento,
-                'MANUTENCAO' AS tipo
-            FROM manutencoes mt
-            LEFT JOIN usuarios u ON u.id = mt.id_usuario
-            LEFT JOIN produtos p ON p.id = mt.id_item
-            LEFT JOIN itens i ON i.id = mt.id_item
-            LEFT JOIN produtos pi ON pi.id = i.produto_id
-            {$manutencaoWhere}
-            "
-            : '';
+function buildEstoqueAtividadeWhere(array $filters, string $alias = 'ee'): array
+{
+    $where = [];
+    $params = [];
 
-        $stmt = getConnection()->prepare(
-            "
-            SELECT *
-            FROM (
-            SELECT
-                m.data_movimentacao AS data_entrega,
-                COALESCE(u.nome, '-') AS usuario,
-                COALESCE(p.nome, '-') AS equipamento,
-                m.tipo
-            FROM movimentacoes m
-            LEFT JOIN usuarios u ON u.id = m.usuario_id
-            LEFT JOIN produtos p ON p.id = m.produto_id
-            {$whereSql}
-            {$manutencaoSql}
-            ) atividades
-            ORDER BY data_entrega DESC
-            LIMIT :limit
-            "
-        );
-        $params = array_merge($params, $manutencaoParams);
-        foreach ($params as $key => $value) {
-            $stmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
-        }
-        $stmt->execute();
-        return $stmt->fetchAll();
-    } catch (Throwable $e) {
-        error_log('Dashboard atividades error: ' . $e->getMessage());
-        return [];
+    if (!empty($filters['data_inicial'])) {
+        $where[] = "{$alias}.data_atualizacao >= :estoque_data_inicial";
+        $params[':estoque_data_inicial'] = $filters['data_inicial'] . ' 00:00:00';
     }
+
+    if (!empty($filters['data_final'])) {
+        $where[] = "{$alias}.data_atualizacao < :estoque_data_final_next";
+        $params[':estoque_data_final_next'] = date('Y-m-d 00:00:00', strtotime($filters['data_final'] . ' +1 day'));
+    }
+
+    [$lojaSql, $lojaParams] = lojaClause($filters['loja_ids'] ?? [], $alias);
+    if ($lojaSql !== '') {
+        $where[] = preg_replace('/^\s*AND\s+/', '', $lojaSql);
+        $params = array_merge($params, $lojaParams);
+    }
+
+    return [$where ? 'WHERE ' . implode(' AND ', $where) : '', $params];
+}
+
+function fetchAtividadesEstoque(array $filters): array
+{
+    [$whereSql, $params] = buildEstoqueAtividadeWhere($filters);
+    $estoqueNomeColumn = columnExists('estoque_equipamentos', 'nome_equipamento') ? 'ee.nome_equipamento' : "''";
+    $params[':usuario_nome'] = dashboardUsuarioAtual();
+
+    return fetchAllPrepared(
+        "
+        SELECT
+            ee.data_atualizacao AS data_entrega,
+            :usuario_nome AS usuario,
+            COALESCE(NULLIF(p.nome, ''), NULLIF({$estoqueNomeColumn}, ''), 'Item não informado') AS equipamento,
+            COALESCE(ee.quantidade, 0) AS quantidade,
+            'ESTOQUE' AS tipo
+        FROM estoque_equipamentos ee
+        LEFT JOIN produtos p ON p.id = ee.produto_id
+        {$whereSql}
+        ORDER BY ee.data_atualizacao DESC, ee.id DESC
+        ",
+        $params
+    );
 }
 
 function fetchDashboardPayload(array $filters, array $lojas, string $perfilColumn): array
@@ -1095,7 +1204,7 @@ function fetchDashboardPayload(array $filters, array $lojas, string $perfilColum
             'perPage' => 5,
             'totalPages' => 0,
         ],
-        'atividades' => fetchAtividadesGerencial($filters),
+        'atividades' => fetchAtividadesEstoque($filters),
     ];
 }
 
@@ -1148,7 +1257,7 @@ if (isset($_GET['ajax'])) {
     }
 
     if ($_GET['ajax'] === 'atividades') {
-        echo json_encode(fetchAtividadesGerencial($ajaxFilters), JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK);
+        echo json_encode(fetchAtividadesEstoque($ajaxFilters), JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK);
         exit;
     }
 
@@ -1165,11 +1274,23 @@ $filters = parseDashboardFilters();
 $lojas = fetchLojasDashboard();
 $usuariosFiltro = fetchUsuariosDashboard($perfilColumn);
 $dashboardPayload = fetchDashboardPayload($filters, $lojas, $perfilColumn);
-$cardsGerenciais = $dashboardPayload['cards'];
-$lojaMaiorDemanda = $cardsGerenciais['lojaMaiorDemanda'];
-$setorMaiorOperacao = $cardsGerenciais['setorMaiorOperacao'];
-$topTrocaMes = $cardsGerenciais['topTroca'];
-$estoqueCritico = $cardsGerenciais['estoqueCritico'];
+$cardsGerenciais = is_array($dashboardPayload['cards'] ?? null) ? $dashboardPayload['cards'] : [];
+$totalMovimentacoes = array_merge([
+    'total' => 0,
+    'anterior' => 0,
+    'variacao' => 0.0,
+    'direcao' => 'flat',
+], is_array($cardsGerenciais['totalMovimentacoes'] ?? null) ? $cardsGerenciais['totalMovimentacoes'] : []);
+$totalMovimentacoesTotal = max(0, (int) ($totalMovimentacoes['total'] ?? 0));
+$totalMovimentacoesVariacao = abs((float) ($totalMovimentacoes['variacao'] ?? 0));
+$totalMovimentacoesDirecao = in_array((string) ($totalMovimentacoes['direcao'] ?? 'flat'), ['up', 'down'], true)
+    ? (string) $totalMovimentacoes['direcao']
+    : 'flat';
+$totalMovimentacoesSinal = $totalMovimentacoesDirecao === 'up' ? '▲ ' : ($totalMovimentacoesDirecao === 'down' ? '▼ ' : '');
+$totalMovimentacoesTrend = $totalMovimentacoesSinal . formatPercentualMovimentacoes($totalMovimentacoesVariacao, $totalMovimentacoesDirecao);
+$setorMaiorOperacao = $cardsGerenciais['setorMaiorOperacao'] ?? ['setor' => '', 'total' => 0];
+$topTrocaMes = $cardsGerenciais['topTroca'] ?? ['equipamento' => '', 'total' => 0];
+$estoqueCritico = $cardsGerenciais['estoqueCritico'] ?? ['itens' => 0, 'quantidade' => 0];
 $mapaCalorLojas = $dashboardPayload['mapaCalorLojas'];
 $tipoResumo = $dashboardPayload['tipo'];
 $produtosRanking = $dashboardPayload['produtosRanking'];
@@ -1215,7 +1336,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             --blue: #2276d2;
             --purple: #8b5bd6;
             --yellow: #f5b301;
-            --radius: 8px;
+            --radius: 18px;
         }
 
         * {
@@ -1262,7 +1383,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .app {
             display: grid;
-            grid-template-columns: 280px minmax(0, 1fr);
+            grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr);
             min-height: 100vh;
         }
 
@@ -1472,6 +1593,86 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             transform: translateY(-1px);
         }
 
+        .sidebar-toggle {
+            width: 34px;
+            height: 34px;
+            border: 1px solid rgba(255, 255, 255, .10);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, .02);
+            color: #fff;
+            display: grid;
+            place-items: center;
+            align-self: flex-end;
+            margin-bottom: 18px;
+            cursor: pointer;
+            transition: background .2s ease, border-color .2s ease, transform .2s ease;
+        }
+
+        .sidebar-toggle:hover {
+            background: rgba(255, 255, 255, .065);
+            border-color: rgba(255, 255, 255, .14);
+            transform: translateY(-1px);
+        }
+
+        .sidebar-toggle svg {
+            width: 15px;
+            height: 15px;
+            transition: transform .22s ease;
+        }
+
+        body.sidebar-collapsed {
+            --sidebar-width: 92px;
+        }
+
+        body.sidebar-collapsed .sidebar {
+            align-items: center;
+            padding-left: 18px;
+            padding-right: 18px;
+        }
+
+        .brand-collapsed { display: none; }
+
+        body.sidebar-collapsed .brand { width: 48px; height: 48px; overflow: visible; justify-content: center; align-items: center; font-size: 0; }
+
+        body.sidebar-collapsed .brand > span:not(.brand-collapsed) { display: none; }
+
+        body.sidebar-collapsed .brand .brand-collapsed { display: inline-flex; width: 24px; height: 24px; margin: 0; align-items: center; justify-content: center; gap: 1px; font-size: 18px; line-height: 22px; font-weight: 900; }
+
+        body.sidebar-collapsed .brand .brand-collapsed span:first-child { display: inline; color: #fff; }
+
+        body.sidebar-collapsed .brand .brand-collapsed span:last-child { display: inline; color: var(--red); }
+
+        body.sidebar-collapsed .nav-label,
+        body.sidebar-collapsed .nav-item span,
+        body.sidebar-collapsed .profile > div,
+        body.sidebar-collapsed .logout span {
+            display: none;
+        }
+
+        body.sidebar-collapsed .nav,
+        body.sidebar-collapsed .nav-group,
+        body.sidebar-collapsed .sidebar-footer {
+            width: 100%;
+        }
+
+        body.sidebar-collapsed .nav-item,
+        body.sidebar-collapsed .logout {
+            justify-content: center;
+            padding: 0;
+        }
+
+        body.sidebar-collapsed .profile {
+            justify-content: center;
+        }
+
+        body.sidebar-collapsed .sidebar-toggle {
+            align-self: center;
+        }
+
+        body.sidebar-collapsed .sidebar-toggle svg {
+            transform: rotate(180deg);
+        }
+
         .main {
             min-width: 0;
         }
@@ -1512,7 +1713,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             justify-content: center;
             border: 1px solid var(--line);
             border-radius: var(--radius);
-            background: rgba(255, 255, 255, .035);
+            background: rgba(255, 255, 255, .02);
             color: #f4f6fa;
             padding: 0;
             font: inherit;
@@ -1616,8 +1817,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         .cards {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 18px;
-            margin-bottom: 18px;
+            gap: 22px;
+            margin-bottom: 22px;
         }
 
         .dashboard-filters {
@@ -1648,6 +1849,119 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             min-width: 0;
         }
 
+        .content > .top,
+        .content .admin-fragment > .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .content > .top h1,
+        .content .admin-fragment > .top h1 {
+            margin: 0 0 8px;
+            font-size: 30px;
+            line-height: 1.15;
+        }
+
+        .content > .top p,
+        .content .admin-fragment > .top p {
+            margin: 0;
+            color: var(--muted);
+        }
+
+        .content .filters {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(140px, 1fr));
+            gap: 12px;
+            padding: 20px;
+        }
+
+        .content label {
+            display: grid;
+            gap: 6px;
+            color: #f4f6fa;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .content input,
+        .content select,
+        .content textarea {
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #10151c;
+            color: #fff;
+            padding: 0 10px;
+            font: inherit;
+        }
+
+        .content input,
+        .content select {
+            height: 38px;
+        }
+
+        .content .limit-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            align-self: end;
+        }
+
+        .content .limit-control .filter-icon {
+            width: 38px;
+            height: 38px;
+            flex: 0 0 38px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, .02);
+            color: var(--muted);
+            overflow: hidden;
+        }
+
+        .content .limit-control .filter-icon svg {
+            width: 17px;
+            height: 17px;
+            max-width: 17px;
+            max-height: 17px;
+            display: block;
+        }
+
+        .content .limit-control select {
+            width: 74px;
+            min-width: 74px;
+        }
+
+        .content .btn {
+            min-height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: transparent;
+            color: #fff;
+            padding: 0 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+        }
+
+        .content .btn:hover {
+            background: rgba(255, 255, 255, .055);
+            border-color: rgba(255, 255, 255, .14);
+            transform: translateY(-1px);
+        }
+
+        .content .btn.primary {
+            background: var(--red);
+            border-color: var(--red);
+            box-shadow: 0 10px 24px rgba(229, 9, 20, .18);
+        }
+
         .metric-card,
         .panel {
             background:
@@ -1659,9 +1973,9 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .metric-card {
-            height: 136px;
-            min-height: 136px;
-            padding: 16px 18px;
+            height: 148px;
+            min-height: 148px;
+            padding: 20px;
             display: grid;
             grid-template-columns: 46px minmax(0, 1fr);
             gap: 14px;
@@ -1756,6 +2070,55 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             line-height: 1.12;
         }
 
+        .metric-value-row {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin-bottom: 6px;
+            max-height: none;
+            -webkit-line-clamp: unset;
+            overflow: visible;
+            flex-wrap: wrap;
+        }
+
+        .metric-value-row > span:first-child {
+            font-size: 24px;
+            line-height: 1.15;
+            font-weight: 700;
+        }
+
+        .metric-value-row .metric-value {
+            display: block;
+            margin-bottom: 0;
+            max-height: none;
+            -webkit-line-clamp: unset;
+            overflow: visible;
+        }
+
+        .metric-trend {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            min-height: 26px;
+            padding: 0 8px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .055);
+            color: #dce3ed;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .metric-trend.up {
+            background: rgba(39, 184, 77, .14);
+            color: #73ed8d;
+        }
+
+        .metric-trend.down {
+            background: rgba(229, 9, 20, .16);
+            color: #ff7b82;
+        }
+
         .metric-value.fit-tiny {
             font-size: 18px;
             line-height: 1.14;
@@ -1769,6 +2132,34 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             margin-bottom: 0;
             white-space: normal;
             overflow-wrap: anywhere;
+        }
+
+        .metric-meta-trend {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .metric-meta-trend .metric-trend {
+            min-height: 22px;
+            margin-top: 0;
+            padding: 0 8px;
+            color: #a7b0c0;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .metric-meta-trend .metric-trend.up {
+            color: #73ed8d;
+        }
+
+        .metric-meta-trend .metric-trend.down {
+            color: #ff7b82;
+        }
+
+        .metric-meta-trend .metric-trend.flat {
+            color: #a7b0c0;
         }
 
         .metric-footer {
@@ -1831,7 +2222,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             padding: 0 12px;
             border: 1px solid rgba(255, 255, 255, .07);
             border-radius: var(--radius);
-            background: rgba(255, 255, 255, .035);
+            background: rgba(255, 255, 255, .02);
             transition: transform .2s ease, background .2s ease, border-color .2s ease;
         }
 
@@ -1893,7 +2284,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             padding: 13px 14px;
             border: 1px solid rgba(255, 255, 255, .075);
             border-radius: var(--radius);
-            background: rgba(255, 255, 255, .035);
+            background: rgba(255, 255, 255, .02);
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -1970,16 +2361,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             width: fit-content;
         }
 
-        .metric-trend {
-            color: #54df70;
-            margin-top: 18px;
-            font-size: 13px;
-            font-weight: 700;
-        }
-
-        .metric-trend.down {
-            color: #c78cff;
-        }
 
         .metric-link.yellow {
             color: var(--yellow);
@@ -1989,6 +2370,24 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             display: grid;
             grid-template-columns: minmax(0, 1.35fr) minmax(360px, .95fr);
             gap: 18px;
+        }
+        .dashboard-grid > div { display: contents; }
+        .dashboard-grid > .panel,
+        .dashboard-grid > div > .panel,
+        .dashboard-grid > div > .ops-center { margin-bottom: 0; }
+        .chart-panel { grid-column: 1; grid-row: 1; }
+        .type-panel { grid-column: 2; grid-row: 1; min-height: 100%; }
+        .movements-recent { grid-column: 1 / -1; grid-row: 2; }
+        .top-products-panel { grid-column: 1; grid-row: 3; }
+        .activities-panel { grid-column: 2; grid-row: 3; }
+        .ops-center { grid-column: 1 / -1; grid-row: 4; order: 20; }
+        @media (max-width: 1100px) {
+            .chart-panel,
+            .type-panel,
+            .movements-recent,
+            .top-products-panel,
+            .activities-panel,
+            .ops-center { grid-column: 1; grid-row: auto; }
         }
 
         .panel {
@@ -2036,7 +2435,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         .ghost-button:hover {
             border-color: rgba(255, 255, 255, .16);
             color: #fff;
-            background: rgba(255, 255, 255, .035);
+            background: rgba(255, 255, 255, .02);
             transform: translateY(-1px);
         }
 
@@ -2251,7 +2650,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             font-weight: 700;
             line-height: 1.15;
         }
-
         .type-list {
             display: grid;
             gap: 9px;
@@ -2269,7 +2667,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             padding: 8px 10px;
             border: 1px solid rgba(255, 255, 255, .07);
             border-radius: var(--radius);
-            background: rgba(255, 255, 255, .035);
+            background: rgba(255, 255, 255, .02);
             transition: border-color .2s ease, background .2s ease, transform .2s ease;
         }
 
@@ -2361,19 +2759,129 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             table-layout: fixed;
         }
 
-        .recent-panel table th:nth-child(1),
-        .recent-panel table td:nth-child(1) { width: 17%; }
-        .recent-panel table th:nth-child(2),
-        .recent-panel table td:nth-child(2) { width: 104px; }
-        .recent-panel table th:nth-child(3),
-        .recent-panel table td:nth-child(3) { width: 23%; }
-        .recent-panel table th:nth-child(4),
-        .recent-panel table td:nth-child(4) { width: 15%; }
-        .recent-panel table th:nth-child(5),
-        .recent-panel table td:nth-child(5) { width: 18%; }
-        .recent-panel table th:nth-child(6),
-        .recent-panel table td:nth-child(6) { width: 148px; }
 
+        .type-panel {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .type-panel .donut-wrap {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 180px minmax(0, 1fr);
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            min-height: 0;
+            padding: 18px 20px 20px;
+            text-align: left;
+        }
+
+        .type-panel .donut-canvas {
+            justify-self: center;
+        }
+
+        .type-panel .type-list {
+            width: min(100%, 310px);
+            justify-self: center;
+            align-self: center;
+        }
+
+        .type-panel .type-row {
+            width: 100%;
+        }
+
+        .movements-recent .table-wrap {
+            overflow-x: hidden;
+        }
+
+        .movements-recent table {
+            min-width: 0;
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .movements-recent table th:nth-child(1),
+        .movements-recent table td:nth-child(1) { width: 13%; }
+        .movements-recent table th:nth-child(2),
+        .movements-recent table td:nth-child(2) { width: 8%; }
+        .movements-recent table th:nth-child(3),
+        .movements-recent table td:nth-child(3) { width: 17%; }
+        .movements-recent table th:nth-child(4),
+        .movements-recent table td:nth-child(4) { width: 15%; }
+        .movements-recent table th:nth-child(5),
+        .movements-recent table td:nth-child(5) { width: 12%; }
+        .movements-recent table th:nth-child(6),
+        .movements-recent table td:nth-child(6) { width: 15%; }
+        .movements-recent table th:nth-child(7),
+        .movements-recent table td:nth-child(7) { width: 20%; }
+
+        .movements-recent th,
+        .movements-recent td {
+            padding-left: 9px;
+            padding-right: 9px;
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+            overflow-wrap: anywhere;
+            line-height: 1.25;
+        }
+
+        .movements-recent .kind {
+            min-width: 0;
+            max-width: 100%;
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        .movements-recent .status-with-reason {
+            max-width: 100%;
+            gap: 5px;
+        }
+
+        .movements-recent .badge {
+            min-width: 0;
+            max-width: calc(100% - 29px);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        .movements-recent .reason-eye {
+            flex: 0 0 24px;
+        }
+
+        .movements-recent th:nth-child(2),
+        .movements-recent td:nth-child(2) {
+            text-align: center;
+        }
+
+        .movements-recent td:nth-child(2) .kind {
+            margin: 0 auto;
+            justify-content: center;
+        }
+
+        .movements-recent .badge.ok,
+        .movements-recent .reason-eye {
+            transition: transform .2s ease, box-shadow .2s ease, background .2s ease, color .2s ease, border-color .2s ease;
+        }
+
+        .movements-recent .badge.ok:hover {
+            transform: scale(1.04);
+            background: rgba(36, 160, 71, .45);
+            box-shadow: 0 8px 18px rgba(39, 184, 77, .16);
+        }
+
+        .movements-recent .reason-eye:hover,
+        .movements-recent .reason-eye:focus-visible {
+            transform: scale(1.06);
+            color: #fff;
+            border-color: rgba(255, 255, 255, .22);
+            background: rgba(255, 255, 255, .06);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, .18);
+        }
         th,
         td {
             text-align: left;
@@ -2477,7 +2985,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             border: 1px solid rgba(255, 255, 255, .12);
             border-radius: 6px;
             color: #dce1ea;
-            background: rgba(255, 255, 255, .035);
+            background: rgba(255, 255, 255, .02);
             cursor: help;
         }
 
@@ -2911,7 +3419,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             .heatmap-tile { height: auto; min-height: 86px; }
             .donut-wrap { grid-template-columns: 1fr !important; justify-items: center; padding: 18px 16px 20px; gap: 16px; }
             .donut-canvas { width: 164px; height: 164px; }
-            .type-list { width: 100%; gap: 8px; }
+        .type-list { width: 100%; gap: 8px; }
             .type-row { min-height: 42px; padding: 9px 10px; }
             .top-products { padding: 14px; }
             .top-product-row { grid-template-columns: 38px minmax(0, 1fr) auto; min-height: 52px; padding: 8px 10px; }
@@ -2935,6 +3443,42 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             .recent-panel td[colspan]::before { content: none; }
         }
 
+
+        .alert-toast {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            width: min(380px, calc(100vw - 32px));
+            z-index: 80;
+            border: 1px solid rgba(255, 255, 255, .13);
+            border-left: 3px solid var(--red);
+            border-radius: 12px;
+            background: rgba(14, 18, 25, .97);
+            box-shadow: 0 22px 54px rgba(0, 0, 0, .42);
+            overflow: hidden;
+        }
+
+        .alert-toast[hidden] { display: none; }
+
+        .alert-toast-header {
+            min-height: 46px;
+            padding: 0 12px 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, .08);
+        }
+
+        .alert-toast-close {
+            width: 30px;
+            height: 30px;
+            border: 1px solid rgba(255, 255, 255, .10);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, .035);
+            color: rgba(255, 255, 255, .82);
+            cursor: pointer;
+            font-weight: 800;
+        }
         @media (max-width: 420px) {
             .title-icon { width: 52px !important; height: 52px !important; }
             .rubiks-cube { width: 28px; height: 28px; }
@@ -2954,13 +3498,16 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
     <div class="mobile-sidebar-backdrop" data-close-menu></div>
     <div class="app">
         <aside class="sidebar">
+            <button class="sidebar-toggle" type="button" aria-label="Recolher menu" title="Recolher menu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
             <div class="brand" aria-label="Bigmais">
-                <span>Big</span><span>mais</span><span class="plus">+</span>
+                <span>Big</span><span>mais</span><span class="plus">+</span><span class="brand-collapsed"><span>B</span><span>M</span></span>
             </div>
 
             <nav class="nav" aria-label="Navegação principal">
                 <div class="nav-group">
-                    <a class="nav-item active" href="dashboard.php">
+                    <a class="nav-item active" href="dashboard.php" title="Painel de Controle">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
                         <span>Painel de Controle</span>
                     </a>
@@ -2968,17 +3515,21 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
                 <div class="nav-group">
                     <div class="nav-label">Gestão</div>
-                    <a class="nav-item muted" href="usuarios.php">
+                    <a class="nav-item muted" href="usuarios.php" title="Usuários">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
                         <span>Usuários</span>
                     </a>
-                    <a class="nav-item muted" href="estoque.php">
+                    <a class="nav-item muted" href="estoque.php" title="Controle de Estoque">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
                         <span>Controle de Estoque</span>
                     </a>
-                    <a class="nav-item muted" href="manutencao.php">
+                    <a class="nav-item muted" href="manutencao.php" title="Manutenção">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4"/><path d="m15 5 4 4"/></svg>
                         <span>Manutenção</span>
+                    </a>
+                    <a class="nav-item muted" href="relatorio_setores.php" title="Relatórios">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14h3v4H7z"/><path d="M12 9h3v9h-3z"/><path d="M17 6h3v12h-3z"/></svg>
+                        <span>Relatórios</span>
                     </a>
                 </div>
             </nav>
@@ -3003,9 +3554,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         <main class="main">
             <header class="topbar">
                 <span class="mobile-menu">Painel</span>
-                <button class="dashboard-scope" id="homeReset" type="button" aria-label="Início" title="Início">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 10.5 9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
-                </button>
             </header>
 
             <section class="content">
@@ -3049,23 +3597,17 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 <div class="cards">
                     <article class="metric-card">
                         <div class="metric-icon red">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9h.01"/><path d="M9 13h.01"/><path d="M9 17h.01"/></svg>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 3-3 4 4 5-7"/><path d="M18 8h1v1"/></svg>
                         </div>
                         <div>
-                            <div class="metric-title" id="cardLojaTitle"><?php echo $lojaAtualFiltro ? 'LOJA ATUAL' : 'LOJA COM MAIOR DEMANDA'; ?></div>
-                            <?php if ($lojaAtualFiltro): ?>
-                                <div class="metric-value" data-fit-text id="cardLojaValue" title="<?php echo e($lojaAtualFiltro['nome']); ?>"><?php echo e($lojaAtualFiltro['nome']); ?></div>
-                                <div class="metric-meta" id="cardLojaMeta"></div>
-                            <?php elseif ((int) $lojaMaiorDemanda['total'] > 0): ?>
-                                <div class="metric-value" data-fit-text id="cardLojaValue" title="<?php echo e($lojaMaiorDemanda['loja']); ?>"><?php echo e($lojaMaiorDemanda['loja']); ?></div>
-                                <div class="metric-meta" id="cardLojaMeta"><?php echo e(pluralAtendimentos((int) $lojaMaiorDemanda['total'])); ?></div>
-                            <?php else: ?>
-                                <div class="metric-value" data-fit-text id="cardLojaValue" title="Sem atendimentos">Sem atendimentos</div>
-                                <div class="metric-meta" id="cardLojaMeta"></div>
-                            <?php endif; ?>
+                            <div class="metric-title" id="cardMovTitle">TOTAL DE MOVIMENTAÇÕES</div>
+                            <div class="metric-value-row">
+                                <span class="metric-value" data-fit-text id="cardMovValue" title="<?php echo $totalMovimentacoesTotal; ?> movimentações"><?php echo $totalMovimentacoesTotal; ?></span>
+                                <span class="metric-trend <?php echo e($totalMovimentacoesDirecao); ?>" id="cardMovTrend"><?php echo e($totalMovimentacoesTrend); ?></span>
+                            </div>
+                            <div class="metric-meta" id="cardMovMeta">Comparado ao período anterior</div>
                         </div>
                     </article>
-
                     <article class="metric-card">
                         <div class="metric-icon red">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M12 9v3"/><path d="M6 15v-3h12v3"/></svg>
@@ -3146,9 +3688,9 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                             </div>
                         </section>
 
-                        <section class="panel recent-panel">
+                        <section class="panel recent-panel movements-recent">
                             <div class="panel-header">
-                                <h2>Movimentações Recentes</h2>
+                                <h2>Chamados Recentes</h2>
                                 <a class="ghost-button" href="movimentacoes.php">Ver todas</a>
                             </div>
                             <div class="table-wrap">
@@ -3158,6 +3700,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                             <th>Usuário</th>
                                             <th>Tipo</th>
                                             <th>Item</th>
+                                                                                        <th>Serial</th>
                                             <th>Loja</th>
                                             <th>Solicitante</th>
                                             <th>Status</th>
@@ -3179,6 +3722,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                                     </span>
                                                 </td>
                                                 <td><?php echo e($row['equipamento']); ?></td>
+                                                                                                <td><?php echo e($row['serial'] ?: 'N/A'); ?></td>
                                                 <td><?php echo e($row['loja']); ?></td>
                                                 <td><?php echo e($row['solicitante']); ?></td>
                                                 <td>
@@ -3192,7 +3736,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                             </tr>
                                         <?php endforeach; ?>
                                         <?php if (empty($recentes)): ?>
-                                            <tr><td colspan="6">Nenhuma movimentação registrada.</td></tr>
+                                            <tr><td colspan="7">Nenhuma movimentação registrada.</td></tr>
                                         <?php endif; ?>
                                     </tbody>
                                 </table>
@@ -3211,7 +3755,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                     </div>
 
                     <div>
-                        <section class="panel">
+                        <section class="panel type-panel">
                             <div class="panel-header">
                                 <h2>Movimentações por Tipo</h2>
                             </div>
@@ -3219,7 +3763,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                 <div class="donut-canvas">
                                     <canvas id="tipoChart"></canvas>
                                     <div class="donut-center">
-                                        <div><strong id="tipoTotal"><?php echo (int) $totalTipos; ?></strong><span>Movimentações</span></div>
+                                        <div><strong id="tipoTotal"><?php echo (int) $totalTipos; ?></strong><span>Registros</span></div>
                                     </div>
                                 </div>
                                 <div class="type-list">
@@ -3230,7 +3774,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                             </div>
                         </section>
 
-                        <section class="panel recent-panel">
+                        <section class="panel recent-panel top-products-panel">
                             <div class="panel-header">
                                 <h2>Top 5 Itens Mais Movimentados</h2>
                             </div>
@@ -3253,32 +3797,9 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                 <?php endif; ?>
                             </div>
                         </section>
-
-                        <section class="panel recent-panel alert-panel <?php echo empty($alertasSistema) ? '' : 'has-alert'; ?>">
+<section class="panel recent-panel activities-panel">
                             <div class="panel-header">
-                                <h2>Alertas do Sistema</h2>
-                            </div>
-                            <div class="alert-list" id="alertasList">
-                                <?php foreach ($alertasSistema as $alerta): ?>
-                                    <div class="alert-row active">
-                                        <span class="alert-dot" aria-hidden="true">
-                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-                                        </span>
-                                        <span class="alert-text"><strong><?php echo e($alerta['produto'] ?? 'Alerta'); ?></strong><span><?php echo e($alerta['detalhe'] ?? ($alerta['texto'] ?? '')); ?></span></span>
-                                    </div>
-                                <?php endforeach; ?>
-                                <?php if (empty($alertasSistema)): ?>
-                                    <div class="alert-row">
-                                        <span class="alert-dot ok">✓</span>
-                                        <span class="alert-text"><strong>Sem alertas</strong></span>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        </section>
-
-                        <section class="panel recent-panel">
-                            <div class="panel-header">
-                                <h2>Atividades Recentes</h2>
+                                <h2>Atividades Estoque</h2>
                             </div>
                             <div class="activity-list" id="atividadesList">
                                 <?php $activityColors = ['purple', 'green', 'red']; ?>
@@ -3288,8 +3809,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                                         </span>
                                         <div>
-                                            <?php $atividadeTipo = strtoupper((string) $atividade['tipo']) === 'MANUTENCAO' ? 'manutenção' : strtolower((string) $atividade['tipo']); ?>
-                                            <p><?php echo e($atividade['usuario'] . ' registrou uma ' . $atividadeTipo . ' de ' . $atividade['equipamento'] . '.'); ?></p>
+                                            <?php $atividadeQuantidade = max(0, (int) ($atividade['quantidade'] ?? 0)); ?>
+                                            <p><?php echo e($atividade['usuario'] . ' adicionou ' . $atividadeQuantidade . ' ' . $atividade['equipamento'] . '.'); ?></p>
                                             <?php $atividadeTs = strtotime((string) $atividade['data_entrega']); ?>
                                             <time><?php echo e(date('d/m/Y', $atividadeTs)); ?> <?php echo e(date('H:i', $atividadeTs)); ?></time>
                                         </div>
@@ -3301,13 +3822,35 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                                         </span>
                                         <div>
-                                            <p>Nenhuma atividade registrada.</p>
+                                            <p>Nenhuma atividade de estoque registrada.</p>
                                             <time>0</time>
                                         </div>
                                     </div>
                                 <?php endif; ?>
                             </div>
                         </section>
+                    </div>
+                </div>
+                <div class="alert-toast" id="alertToast" data-session-key="<?php echo e(session_id()); ?>" hidden>
+                    <div class="alert-toast-header">
+                        <strong>Alertas do Sistema</strong>
+                        <button type="button" class="alert-toast-close" aria-label="Fechar alerta">X</button>
+                    </div>
+                    <div class="alert-list" id="alertasList">
+                        <?php foreach ($alertasSistema as $alerta): ?>
+                            <div class="alert-row active">
+                                <span class="alert-dot" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                                </span>
+                                <span class="alert-text"><strong><?php echo e($alerta['produto'] ?? 'Alerta'); ?></strong><span><?php echo e($alerta['detalhe'] ?? ($alerta['texto'] ?? '')); ?></span></span>
+                            </div>
+                        <?php endforeach; ?>
+                        <?php if (empty($alertasSistema)): ?>
+                            <div class="alert-row">
+                                <span class="alert-dot ok">✓</span>
+                                <span class="alert-text"><strong>Sem alertas</strong></span>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </section>
@@ -3513,14 +4056,14 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         function renderCards(data) {
-            const loja = data.lojaMaiorDemanda || {};
+            const movimentacoes = data.totalMovimentacoes || {};
             const entrega = data.setorMaiorOperacao || {};
             const troca = data.topTroca || {};
             const estoque = data.estoqueCritico || {};
 
-            const lojaTitle = document.getElementById('cardLojaTitle');
-            const lojaValue = document.getElementById('cardLojaValue');
-            const lojaMeta = document.getElementById('cardLojaMeta');
+            const movValue = document.getElementById('cardMovValue');
+            const movMeta = document.getElementById('cardMovMeta');
+            const movTrend = document.getElementById('cardMovTrend');
             const entregaValue = document.getElementById('cardEntregaValue');
             const entregaMeta = document.getElementById('cardEntregaMeta');
             const trocaValue = document.getElementById('cardTrocaValue');
@@ -3529,24 +4072,20 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             const estoqueValue = document.getElementById('cardEstoqueValue');
             const estoqueMeta = document.getElementById('cardEstoqueMeta');
             const estoqueLink = document.getElementById('cardEstoqueLink');
-            const totalLoja = Number(loja.total || 0);
-            const selectedLojaName = selectedLojaIds.length ? getSelectedLojaName() : '';
-
-            if (selectedLojaName) {
-                lojaTitle.textContent = 'LOJA ATUAL';
-                lojaValue.textContent = selectedLojaName;
-                lojaMeta.textContent = '';
-            } else if (totalLoja > 0) {
-                lojaTitle.textContent = 'LOJA COM MAIOR DEMANDA';
-                lojaValue.textContent = String(loja.loja || 'Loja não informada');
-                lojaMeta.textContent = pluralAtendimentosJs(totalLoja);
-            } else {
-                lojaTitle.textContent = 'LOJA COM MAIOR DEMANDA';
-                lojaValue.textContent = 'Sem atendimentos';
-                lojaMeta.textContent = '';
+            const totalMov = Number(movimentacoes.total || 0);
+            if (movValue) {
+                movValue.textContent = totalMov;
+                movValue.title = `${totalMov} movimentações`;
             }
-            lojaValue.title = lojaValue.textContent;
-
+            if (movMeta) movMeta.textContent = 'Comparado ao período anterior';
+            if (movTrend) {
+                const variacaoRaw = Number(movimentacoes.variacao || 0);
+                const variacao = Number.isFinite(variacaoRaw) ? Math.abs(variacaoRaw) : 0;
+                const direcao = ['up', 'down'].includes(String(movimentacoes.direcao)) ? String(movimentacoes.direcao) : 'flat';
+                const sinal = direcao === 'up' ? '▲ +' : (direcao === 'down' ? '▼ -' : '');
+                movTrend.className = `metric-trend ${direcao}`;
+                movTrend.textContent = direcao === 'flat' ? '0%' : `${sinal}${variacao.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+            }
             entregaValue.textContent = Number(entrega.total || 0) > 0 ? entrega.setor : 'Nenhuma';
             entregaValue.title = entregaValue.textContent;
             entregaMeta.textContent = Number(entrega.total || 0) > 0 ? pluralAtendimentosJs(entrega.total) : '';
@@ -3829,11 +4368,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             return `${day} ${time}`;
         }
 
-        function activityTipoLabel(tipo) {
-            return String(tipo || '').toUpperCase() === 'MANUTENCAO'
-                ? 'manutenção'
-                : String(tipo || '').toLowerCase();
-        }
 
         function renderRecentes(data) {
             const body = document.getElementById('recentesBody');
@@ -3846,7 +4380,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             paginationInfo.textContent = '';
 
             if (!data.rows.length) {
-                body.innerHTML = '<tr><td colspan="6">Nenhuma movimentação registrada.</td></tr>';
+                body.innerHTML = '<tr><td colspan="7">Nenhuma movimentação registrada.</td></tr>';
                 pagination.style.display = 'none';
                 return;
             }
@@ -3862,6 +4396,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <td>${escapeHtml(row.usuario)}</td>
                         <td><span class="kind ${isTroca ? 'troca' : 'entrega'}">${tipoLabel}</span></td>
                         <td>${escapeHtml(row.equipamento)}</td>
+                                                <td>${escapeHtml(row.serial || 'N/A')}</td>
                         <td>${escapeHtml(row.loja)}</td>
                         <td>${escapeHtml(row.solicitante || '-')}</td>
                         <td>
@@ -3945,7 +4480,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                         </span>
                         <div>
-                            <p>Nenhuma atividade registrada.</p>
+                            <p>Nenhuma atividade de estoque registrada.</p>
                             <time>0</time>
                         </div>
                     </div>
@@ -3960,7 +4495,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                     </span>
                     <div>
-                        <p>${escapeHtml(atividade.usuario)} registrou uma ${escapeHtml(activityTipoLabel(atividade.tipo))} de ${escapeHtml(atividade.equipamento)}.</p>
+                        <p>${escapeHtml(atividade.usuario || 'Administrador')} adicionou ${Number(atividade.quantidade || 0)} ${escapeHtml(atividade.equipamento || 'Item não informado')}.</p>
                         <time>${formatShortDateTime(atividade.data_entrega)}</time>
                     </div>
                 </div>
@@ -4132,6 +4667,34 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             });
         }
 
+
+        function setupAlertToast() {
+            const toast = document.getElementById('alertToast');
+            if (!toast) return;
+            const key = `controleAlertasSeen:${toast.dataset.sessionKey || 'session'}`;
+            if (!sessionStorage.getItem(key)) {
+                toast.hidden = false;
+                sessionStorage.setItem(key, '1');
+            }
+            toast.querySelector('.alert-toast-close')?.addEventListener('click', () => {
+                toast.hidden = true;
+                sessionStorage.setItem(key, '1');
+            });
+        }
+        function setupSidebarCollapse() {
+            const toggle = document.querySelector('.sidebar-toggle');
+            const apply = (collapsed) => {
+                document.body.classList.toggle('sidebar-collapsed', collapsed);
+                toggle?.setAttribute('aria-label', collapsed ? 'Expandir menu' : 'Recolher menu');
+                toggle?.setAttribute('title', collapsed ? 'Expandir menu' : 'Recolher menu');
+            };
+            apply(localStorage.getItem('controleSidebarCollapsed') === '1');
+            toggle?.addEventListener('click', () => {
+                const collapsed = !document.body.classList.contains('sidebar-collapsed');
+                localStorage.setItem('controleSidebarCollapsed', collapsed ? '1' : '0');
+                apply(collapsed);
+            });
+        }
         function setupMobileMenu() {
             const toggle = document.querySelector('.mobile-menu-toggle');
             const backdrop = document.querySelector('.mobile-sidebar-backdrop');
@@ -4147,18 +4710,81 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             document.querySelectorAll('.sidebar a').forEach((link) => link.addEventListener('click', closeMenu));
             document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenu(); });
         }
+        function runInlineScripts(root) {
+            root.querySelectorAll('script').forEach((oldScript) => {
+                const script = document.createElement('script');
+                Array.from(oldScript.attributes).forEach((attr) => script.setAttribute(attr.name, attr.value));
+                script.textContent = oldScript.src ? oldScript.textContent : `(() => {\n${oldScript.textContent}\n})();`;
+                oldScript.replaceWith(script);
+            });
+        }
+
+        function setActiveNav(url) {
+            const target = new URL(url, window.location.href);
+            document.querySelectorAll('.nav-item[href]').forEach((item) => {
+                const itemUrl = new URL(item.getAttribute('href'), window.location.href);
+                const active = itemUrl.pathname.split('/').pop() === target.pathname.split('/').pop();
+                item.classList.toggle('active', active);
+                item.classList.toggle('muted', !active);
+            });
+        }
+
+        async function loadAdminPage(url, push = true) {
+            const target = new URL(url, window.location.href);
+            if (target.pathname.endsWith('/dashboard.php')) return false;
+            const content = document.querySelector('.content');
+            if (!content) return false;
+            content.style.opacity = '.35';
+            content.style.transform = 'translateY(4px)';
+            try {
+                const response = await fetch(target.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                if (!response.ok) throw new Error('Falha ao carregar página');
+                const html = await response.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const fragment = doc.querySelector('.admin-fragment, .page, .content');
+                if (!fragment) throw new Error('Conteúdo não encontrado');
+                content.innerHTML = fragment.innerHTML;
+                const pageTitle = fragment.dataset.pageTitle || doc.title.replace(' - Controle Big TI', '') || 'Controle Big TI';
+                document.title = `${pageTitle} - Controle Big TI`;
+                if (push) history.pushState({ adminSpa: true }, '', target.href);
+                setActiveNav(target.href);
+                prepareResponsiveTables();
+                runInlineScripts(content);
+                requestAnimationFrame(() => {
+                    content.style.opacity = '';
+                    content.style.transform = '';
+                });
+                return true;
+            } catch (error) {
+                window.location.href = target.href;
+                return false;
+            }
+        }
+
         document.addEventListener('click', (event) => {
             const link = event.target.closest('a[href]');
             if (!link || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             if (link.target && link.target !== '_self') return;
             const href = link.getAttribute('href');
             if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+            const url = new URL(link.href, window.location.href);
+            if (url.origin === window.location.origin && url.pathname.includes('/admin/') && !url.pathname.endsWith('/dashboard.php')) {
+                event.preventDefault();
+                loadAdminPage(url.href);
+                return;
+            }
             event.preventDefault();
             document.body.classList.add('page-leaving');
             setTimeout(() => { window.location.href = link.href; }, 230);
         });
+        window.addEventListener('popstate', () => {
+            if (window.location.pathname.endsWith('/dashboard.php')) window.location.reload();
+            else loadAdminPage(window.location.href, false);
+        });
 
         prepareResponsiveTables();
+        setupAlertToast();
+        setupSidebarCollapse();
         setupMobileMenu();
         renderRecentes(initialRecentes);
         renderMapaCalor(initialDashboard.graficoPrincipal?.lojas || [], initialDashboard.graficoPrincipal?.loja_ids || selectedLojaIds);

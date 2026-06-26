@@ -171,7 +171,7 @@ $pagina = min($pagina, $totalPaginas);
 $offset = ($pagina - 1) * $porPagina;
 $stmt = $pdo->prepare("SELECT m.id_manutencao, COALESCE(p.nome, pi.nome, '-') AS equipamento,
  COALESCE(l.nome, '-') AS loja, COALESCE(u.nome, '-') AS usuario, m.descricao, m.status,
- m.data_registro, m.data_conclusao " . $baseSql . "
+ m.data_registro, m.data_conclusao, COALESCE(NULLIF(i.serial, ''), 'N/A') AS serial " . $baseSql . "
  ORDER BY m.data_registro DESC, m.id_manutencao DESC LIMIT :limite OFFSET :offset");
 foreach ($params as $chave => $valor) $stmt->bindValue($chave, $valor);
 $stmt->bindValue(':limite', $porPagina, PDO::PARAM_INT);
@@ -183,6 +183,8 @@ adminPageStart('Manutenção');
 ?>
 <style>
     .maintenance-form { grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) minmax(180px, 220px) auto auto; align-items: end; }
+    .maintenance-filter { grid-template-columns: minmax(260px, 1fr) auto auto; align-items: end; }
+    .maintenance-filter .limit-control { grid-column: 1 / -1; width: fit-content; }
     .maintenance-form label.description { grid-column: 1 / -1; }
     .maintenance-form textarea {
         min-height: 88px;
@@ -212,7 +214,6 @@ adminPageStart('Manutenção');
         white-space: normal;
         color: var(--muted);
     }
-    .maintenance-filter { grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px) minmax(120px, 150px) auto auto; align-items: end; }
     .maintenance-modal { position: fixed; inset: 0; z-index: 1200; display: none; place-items: center; padding: 24px; background: rgba(0,0,0,.72); backdrop-filter: blur(4px); }
     .maintenance-modal.open { display: grid; }
     .maintenance-modal-dialog { width: min(560px, 100%); border: 1px solid var(--line); border-radius: 8px; background: #11171f; box-shadow: 0 24px 70px rgba(0,0,0,.52); overflow: hidden; }
@@ -231,7 +232,6 @@ adminPageStart('Manutenção');
         <h1>Manutenção</h1>
         <p>Registre equipamentos enviados para manutenção.</p>
     </div>
-    <a class="btn" href="dashboard.php">Voltar</a>
 </section>
 
 <?php if ($mensagem): ?>
@@ -285,11 +285,6 @@ adminPageStart('Manutenção');
 </form>
 <form class="panel filters maintenance-filter" method="GET">
     <label>Pesquisar<input type="search" name="busca" value="<?php echo e($busca); ?>" placeholder="Equipamento ou loja"></label>
-    <label>Exibir<select name="filtro">
-        <option value="RECENTES" <?php echo $filtroStatus === 'RECENTES' ? 'selected' : ''; ?>>Manutenções Recentes</option>
-        <option value="CONCLUIDAS" <?php echo $filtroStatus === 'CONCLUIDAS' ? 'selected' : ''; ?>>Concluídas</option>
-        <option value="TODAS" <?php echo $filtroStatus === 'TODAS' ? 'selected' : ''; ?>>Todas</option>
-    </select></label>
     <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span><select name="limite" onchange="this.form.submit()">
         <?php foreach ($limitesPermitidos as $limite): ?>
             <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
@@ -307,11 +302,10 @@ adminPageStart('Manutenção');
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
                         <th>Equipamento</th>
                         <th>Loja</th>
 
-                        <th>Status</th>
+                        <th>Serial</th>
                         <th>Data de envio</th>
                         <th>Usuário</th>
                         <th>Ações</th>
@@ -321,11 +315,10 @@ adminPageStart('Manutenção');
                     <?php foreach ($manutencoes as $row): ?>
                         <?php $concluido = strtoupper((string) $row['status']) === 'CONCLUIDO'; ?>
                         <tr>
-                            <td><?php echo (int) $row['id_manutencao']; ?></td>
                             <td><?php echo e($row['equipamento']); ?></td>
                             <td><?php echo e($row['loja']); ?></td>
 
-                            <td><span class="maintenance-badge <?php echo $concluido ? 'done' : ''; ?>"><?php echo e(statusManutencaoLabel((string) $row['status'])); ?></span></td>
+                            <td><?php echo e($row['serial'] ?: 'N/A'); ?></td>
                             <td><?php echo e(date('d/m/Y H:i', strtotime((string) $row['data_registro']))); ?></td>
                             <td><?php echo e($row['usuario']); ?></td>
                             <td>

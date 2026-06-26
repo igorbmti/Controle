@@ -263,8 +263,6 @@ adminPageStart('Usuários');
     .users-table table {
         table-layout: fixed;
     }
-    .users-table th:nth-child(1),
-    .users-table td:nth-child(1) { width: 70px; }
     .users-table th:nth-child(7),
     .users-table td:nth-child(7) { width: 260px; }
     @media (max-width: 760px) {
@@ -281,7 +279,6 @@ adminPageStart('Usuários');
         <p>Gerencie os usuários administrativos e técnicos do sistema.</p>
     </div>
     <div class="action-row">
-        <a class="btn" href="dashboard.php">Voltar</a>
         <?php if ($acao === 'listar'): ?>
             <a class="btn primary" href="usuarios.php?acao=novo">Novo Usuário</a>
         <?php endif; ?>
@@ -492,7 +489,6 @@ elseif ($acao === 'visualizar'):
             </table>
         </div>
         <div class="form-actions">
-            <a class="btn" href="usuarios.php">Voltar</a>
             <a class="btn primary" href="usuarios.php?acao=editar&id=<?php echo (int) $usuario['id']; ?>">Editar</a>
         </div>
     </section>
@@ -558,7 +554,6 @@ else:
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
                         <th>Nome</th>
                         <th>Login</th>
                         <th>Perfil</th>
@@ -570,7 +565,6 @@ else:
                 <tbody>
                     <?php foreach ($usuarios as $item): ?>
                         <tr>
-                            <td><?php echo (int) $item['id']; ?></td>
                             <td><?php echo e($item['nome']); ?></td>
                             <td><?php echo e($item['usuario']); ?></td>
                             <td><?php echo e(perfilUsuario($item['nivel'])); ?></td>
@@ -590,7 +584,7 @@ else:
                         </tr>
                     <?php endforeach; ?>
                     <?php if (empty($usuarios)): ?>
-                        <tr><td colspan="7">Nenhum usuário encontrado.</td></tr>
+                        <tr><td colspan="6">Nenhum usuário encontrado.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>

@@ -181,10 +181,13 @@ $stmt = $pdo->prepare("
         e.id,
         p.nome,
         e.quantidade,
+        COALESCE(NULLIF(MAX(i.serial), ''), 'N/A') AS serial,
         e.data_atualizacao
     FROM estoque_equipamentos e
     INNER JOIN produtos p ON p.id = e.produto_id
+    LEFT JOIN itens i ON i.produto_id = e.produto_id
     {$where}
+    GROUP BY e.id, p.nome, e.quantidade, e.data_atualizacao
     ORDER BY p.nome
     LIMIT :limite OFFSET :offset
 ");
@@ -234,7 +237,6 @@ adminPageStart('Controle de Estoque');
         <h1>Controle de Estoque</h1>
         <p>Cadastro e consulta de equipamentos em estoque.</p>
     </div>
-    <a class="btn" href="dashboard.php">Voltar</a>
 </section>
 
 <?php if ($mensagem): ?>
@@ -295,10 +297,9 @@ adminPageStart('Controle de Estoque');
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
                         <th>Nome do equipamento</th>
                         <th>Quantidade em estoque</th>
-                        <th>Situação</th>
+                        <th>Serial</th>
                         <th>Data de cadastro</th>
                         <th>Ações</th>
                     </tr>
@@ -306,10 +307,9 @@ adminPageStart('Controle de Estoque');
                 <tbody>
                     <?php foreach ($estoques as $row): ?>
                         <tr>
-                            <td><?php echo (int) $row['id']; ?></td>
                             <td><?php echo e($row['nome']); ?></td>
                             <td><?php echo (int) $row['quantidade']; ?></td>
-                            <td><span class="stock-status <?php echo (int) $row['quantidade'] <= 3 ? 'critical' : ''; ?>"><?php echo (int) $row['quantidade'] <= 3 ? 'Crítico' : 'Regular'; ?></span></td>
+                            <td><?php echo e($row['serial'] ?: 'N/A'); ?></td>
                             <td><?php echo e(date('d/m/Y H:i', strtotime((string) $row['data_atualizacao']))); ?></td>
                             <td>
                                 <div class="stock-actions">

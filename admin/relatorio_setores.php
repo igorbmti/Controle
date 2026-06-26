@@ -42,7 +42,6 @@ adminPageStart('Equipamentos por Setor');
     </div>
     <div>
         <button class="btn" type="button" disabled>Exportar</button>
-        <a class="btn" href="dashboard.php">Voltar</a>
     </div>
 </section>
 <form class="panel filters" method="GET">

@@ -107,7 +107,6 @@ adminPageStart('Movimentações');
         <h1>Movimentações</h1>
         <p>Consulta completa de entregas e trocas registradas.</p>
     </div>
-    <a class="btn" href="dashboard.php">Voltar</a>
 </section>
 
 <form class="panel filters mov-filters" method="GET">
