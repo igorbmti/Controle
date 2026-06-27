@@ -207,14 +207,59 @@ adminPageStart('Controle de Estoque');
         align-items: center;
         justify-content: space-between;
         gap: 14px;
-        padding: 16px 18px;
+        padding: 20px;
         border-bottom: 1px solid rgba(255, 255, 255, .08);
     }
     .stock-summary strong { display: block; font-size: 15px; }
     .stock-summary span { color: var(--muted); font-size: 13px; }
-    .stock-form { grid-template-columns: minmax(260px, 1fr) minmax(120px, 180px) auto auto; align-items: end; }
-    .stock-search { grid-template-columns: minmax(260px, 1fr) auto auto; align-items: end; }
-    .stock-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .top { margin-bottom: 24px; }
+    .panel { margin-bottom: 18px; }
+    .stock-form {
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 12px;
+        padding: 20px;
+        align-items: end;
+    }
+    .stock-form > label:first-of-type { grid-column: span 7; }
+    .stock-form > label:nth-of-type(2) { grid-column: span 2; }
+    .stock-form .form-actions { grid-column: span 3; }
+    .stock-search {
+        grid-template-columns: minmax(260px, 1fr) auto minmax(200px, auto);
+        gap: 12px;
+        padding: 20px;
+        align-items: end;
+    }
+    .stock-form > *,
+    .stock-search > * { min-width: 0; }
+    .stock-form input,
+    .stock-form select,
+    .stock-search input,
+    .stock-search select {
+        width: 100%;
+        height: 38px;
+    }
+    .form-actions,
+    .filter-actions {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
+        gap: 10px;
+        align-items: end;
+    }
+    .stock-form .btn,
+    .stock-search .btn,
+    .stock-actions .btn {
+        width: 100%;
+        min-height: 38px;
+        white-space: nowrap;
+    }
+    .stock-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: nowrap;
+    }
+    .stock-actions form { margin: 0; }
     .stock-status {
         display: inline-flex;
         min-height: 28px;
@@ -227,9 +272,55 @@ adminPageStart('Controle de Estoque');
         font-size: 12px;
     }
     .stock-status.critical { background: rgba(245, 179, 1, .16); color: #ffd36a; }
-    @media (max-width: 820px) {
-        .stock-form,
+    .table-wrap,
+    table { width: 100%; }
+    th,
+    td { padding: 14px 18px; vertical-align: middle; }
+    .empty { padding: 18px; }
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        min-height: 72px;
+        padding: 16px 18px;
+        border-top: 1px solid rgba(255, 255, 255, .08);
+    }
+    .pagination a,
+    .pagination span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 36px;
+        height: 36px;
+        padding: 0 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+        transition: background .2s ease, border-color .2s ease, color .2s ease;
+    }
+    .pagination a:hover { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .18); color: #fff; }
+    .pagination .active { background: var(--red); border-color: var(--red); color: #fff; }
+    .pagination .disabled { cursor: not-allowed; opacity: .38; }
+    .pagination .ellipsis { min-width: 28px; padding: 0 4px; border-color: transparent; }
+    @media (max-width: 900px) {
+        .stock-form > label:first-of-type { grid-column: span 7; }
+        .stock-form > label:nth-of-type(2) { grid-column: span 5; }
+        .stock-form .form-actions { grid-column: 1 / -1; }
+    }
+    @media (max-width: 720px) {
+        .stock-form > label,
+        .stock-form .form-actions { grid-column: 1 / -1; }
         .stock-search { grid-template-columns: 1fr; }
+        .form-actions,
+        .filter-actions { grid-auto-flow: row; grid-template-columns: 1fr; }
+        .stock-actions { flex-direction: column; align-items: stretch; }
+        .stock-summary { align-items: stretch; flex-direction: column; }
+        .pagination { justify-content: flex-end; flex-wrap: wrap; }
     }
 </style>
 <section class="top">
@@ -255,10 +346,12 @@ adminPageStart('Controle de Estoque');
     <label>Quantidade
         <input type="number" name="quantidade" min="0" required value="<?php echo e((string) ($editando['quantidade'] ?? 0)); ?>">
     </label>
-    <button class="btn primary" type="submit">Salvar</button>
-    <?php if ($editando): ?>
-        <a class="btn" href="estoque.php">Cancelar edição</a>
-    <?php endif; ?>
+    <div class="form-actions">
+        <button class="btn primary" type="submit">Salvar</button>
+        <?php if ($editando): ?>
+            <a class="btn" href="estoque.php">Cancelar edição</a>
+        <?php endif; ?>
+    </div>
 </form>
 
 <form class="panel filters stock-search" method="GET">
@@ -278,8 +371,10 @@ adminPageStart('Controle de Estoque');
             <?php endforeach; ?>
         </select>
     </label>
-    <button class="btn primary" type="submit">Pesquisar</button>
-    <a class="btn" href="<?php echo $somenteCritico ? 'estoque.php?critico=1' : 'estoque.php'; ?>">Limpar</a>
+    <div class="filter-actions">
+        <button class="btn primary" type="submit">Pesquisar</button>
+        <a class="btn" href="<?php echo $somenteCritico ? 'estoque.php?critico=1' : 'estoque.php'; ?>">Limpar</a>
+    </div>
 </form>
 
 <section class="panel">
@@ -328,12 +423,38 @@ adminPageStart('Controle de Estoque');
         </div>
     <?php endif; ?>
     <?php if ($totalPaginas > 1): ?>
+        <?php
+        if ($totalPaginas <= 7) {
+            $paginasVisiveis = range(1, $totalPaginas);
+        } elseif ($pagina <= 4) {
+            $paginasVisiveis = [1, 2, 3, 4, 5, '...', $totalPaginas];
+        } elseif ($pagina >= $totalPaginas - 3) {
+            $paginasVisiveis = [1, '...', $totalPaginas - 4, $totalPaginas - 3, $totalPaginas - 2, $totalPaginas - 1, $totalPaginas];
+        } else {
+            $paginasVisiveis = [1, '...', $pagina - 1, $pagina, $pagina + 1, '...', $totalPaginas];
+        }
+        ?>
         <nav class="pagination" aria-label="Paginação">
-            <?php for ($i = 1; $i <= $totalPaginas; $i++): ?>
-                <?php if ($i === $pagina): ?><span class="active"><?php echo $i; ?></span>
-                <?php else: ?><a href="<?php echo e(pageUrl(['pagina' => $i])); ?>"><?php echo $i; ?></a>
+            <?php if ($pagina > 1): ?>
+                <a href="<?php echo e(pageUrl(['pagina' => $pagina - 1])); ?>" rel="prev">◀ Anterior</a>
+            <?php else: ?>
+                <span class="disabled" aria-disabled="true">◀ Anterior</span>
+            <?php endif; ?>
+            <?php foreach ($paginasVisiveis as $itemPagina): ?>
+                <?php if ($itemPagina === '...'): ?>
+                    <span class="ellipsis" aria-hidden="true">...</span>
+                <?php elseif ($itemPagina === $pagina): ?>
+                    <span class="active" aria-current="page"><?php echo $itemPagina; ?></span>
+                <?php else: ?>
+                    <a href="<?php echo e(pageUrl(['pagina' => $itemPagina])); ?>"><?php echo $itemPagina; ?></a>
                 <?php endif; ?>
-            <?php endfor; ?>
+            <?php endforeach; ?>
+            <?php if ($pagina < $totalPaginas): ?>
+                <a href="<?php echo e(pageUrl(['pagina' => $pagina + 1])); ?>" rel="next">Próximo ▶</a>
+            <?php else: ?>
+                <span class="disabled" aria-disabled="true">Próximo ▶</span>
+            <?php endif; ?>
         </nav>
-    <?php endif; ?></section>
+    <?php endif; ?>
+</section>
 <?php adminPageEnd(); ?>

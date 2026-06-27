@@ -182,11 +182,38 @@ $manutencoes = $stmt->fetchAll();
 adminPageStart('Manutenção');
 ?>
 <style>
-    .maintenance-form { grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) minmax(180px, 220px) auto auto; align-items: end; }
-    .maintenance-filter { grid-template-columns: minmax(260px, 1fr) auto auto; align-items: end; }
-    .maintenance-filter .limit-control { grid-column: 1 / -1; width: fit-content; }
+    html, body { max-width: 100%; overflow-x: hidden; }
+    .top { margin-bottom: 24px; }
+    .panel { width: 100%; max-width: 100%; min-width: 0; margin-bottom: 18px; }
+    .maintenance-form {
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 12px;
+        padding: 20px;
+        align-items: end;
+    }
+    .maintenance-form > label:nth-of-type(1) { grid-column: span 4; }
+    .maintenance-form > label:nth-of-type(2) { grid-column: span 3; }
+    .maintenance-form > label:nth-of-type(3) { grid-column: span 2; }
+    .maintenance-form .form-actions { grid-column: span 3; }
+    .maintenance-filter {
+        grid-template-columns: minmax(260px, 1fr) auto minmax(200px, auto);
+        gap: 12px;
+        padding: 20px;
+        align-items: end;
+    }
+    .maintenance-filter .limit-control { width: auto; }
     .maintenance-form label.description { grid-column: 1 / -1; }
+    .maintenance-form > *,
+    .maintenance-filter > * { min-width: 0; }
+    .maintenance-form input,
+    .maintenance-form select,
+    .maintenance-filter input,
+    .maintenance-filter select {
+        width: 100%;
+        height: 38px;
+    }
     .maintenance-form textarea {
+        width: 100%;
         min-height: 88px;
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -196,7 +223,29 @@ adminPageStart('Manutenção');
         font: inherit;
         resize: vertical;
     }
-    .maintenance-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+    .form-actions,
+    .filter-actions {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
+        gap: 10px;
+        align-items: end;
+    }
+    .maintenance-form .btn,
+    .maintenance-filter .btn,
+    .maintenance-actions .btn {
+        width: 100%;
+        min-height: 38px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .maintenance-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .maintenance-actions form { min-width: 0; margin: 0; }
     .maintenance-badge {
         display: inline-flex;
         min-height: 28px;
@@ -221,9 +270,67 @@ adminPageStart('Manutenção');
     .maintenance-modal-header { border-bottom:1px solid var(--line); }
     .maintenance-modal-header h2 { margin:0; font-size:16px; }
     .maintenance-modal-body { padding:18px; color:#dce2ea; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; }
-    .maintenance-modal-footer { border-top:1px solid var(--line); justify-content:flex-end; }    @media (max-width: 980px) {
-        .maintenance-form { grid-template-columns: 1fr; }
-        .maintenance-form label.description { grid-column: auto; }
+    .maintenance-modal-footer { border-top:1px solid var(--line); justify-content:flex-end; }
+    .maintenance-table .table-wrap { width: 100%; max-width: 100%; overflow: hidden; }
+    .maintenance-table table { width: 100%; min-width: 0; table-layout: fixed; }
+    .maintenance-table th,
+    .maintenance-table td {
+        padding: 14px 12px;
+        vertical-align: middle;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .maintenance-table th:last-child,
+    .maintenance-table td:last-child { width: 320px; }
+    .empty { padding: 18px; }
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        min-height: 72px;
+        padding: 16px 18px;
+        border-top: 1px solid rgba(255, 255, 255, .08);
+    }
+    .pagination a,
+    .pagination span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 36px;
+        height: 36px;
+        padding: 0 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+        transition: background .2s ease, border-color .2s ease, color .2s ease;
+    }
+    .pagination a:hover { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .18); color: #fff; }
+    .pagination .active { background: var(--red); border-color: var(--red); color: #fff; }
+    .pagination .disabled { cursor: not-allowed; opacity: .38; }
+    .pagination .ellipsis { min-width: 28px; padding: 0 4px; border-color: transparent; }
+    @media (max-width: 1100px) {
+        .maintenance-form > label:nth-of-type(1),
+        .maintenance-form > label:nth-of-type(2) { grid-column: span 6; }
+        .maintenance-form > label:nth-of-type(3) { grid-column: span 4; }
+        .maintenance-form .form-actions { grid-column: span 8; }
+    }
+    @media (max-width: 720px) {
+        .maintenance-form > label,
+        .maintenance-form .form-actions,
+        .maintenance-form label.description { grid-column: 1 / -1; }
+        .maintenance-filter { grid-template-columns: 1fr; }
+        .form-actions,
+        .filter-actions { grid-auto-flow: row; grid-template-columns: 1fr; }
+        .maintenance-actions { flex-direction: column; align-items: stretch; }
+        .maintenance-actions form { width: 100%; }
+        .maintenance-table th:last-child,
+        .maintenance-table td:last-child { width: auto; }
+        .pagination { justify-content: flex-end; flex-wrap: wrap; }
     }
 </style>
 
@@ -274,10 +381,12 @@ adminPageStart('Manutenção');
         </select>
     </label>
 
-    <button class="btn primary" type="submit"><?php echo $editando ? 'Salvar alterações' : 'Adicionar equipamento em manutenção'; ?></button>
-    <?php if ($editando): ?>
-        <a class="btn" href="manutencao.php">Cancelar edição</a>
-    <?php endif; ?>
+    <div class="form-actions">
+        <button class="btn primary" type="submit"><?php echo $editando ? 'Salvar alterações' : 'Adicionar equipamento em manutenção'; ?></button>
+        <?php if ($editando): ?>
+            <a class="btn" href="manutencao.php">Cancelar edição</a>
+        <?php endif; ?>
+    </div>
 
     <label class="description">Descrição do problema
         <textarea name="descricao" required><?php echo e($editando['descricao'] ?? ''); ?></textarea>
@@ -290,11 +399,13 @@ adminPageStart('Manutenção');
             <option value="<?php echo $limite; ?>" <?php echo $porPagina === $limite ? 'selected' : ''; ?>><?php echo $limite; ?></option>
         <?php endforeach; ?>
     </select></label>
-    <button class="btn primary" type="submit">Pesquisar</button>
-    <a class="btn" href="manutencao.php">Limpar</a>
+    <div class="filter-actions">
+        <button class="btn primary" type="submit">Pesquisar</button>
+        <a class="btn" href="manutencao.php">Limpar</a>
+    </div>
 </form>
 
-<section class="panel">
+<section class="panel maintenance-table">
     <?php if (empty($manutencoes)): ?>
         <div class="empty">Nenhum equipamento em manutenção.</div>
     <?php else: ?>
@@ -315,13 +426,13 @@ adminPageStart('Manutenção');
                     <?php foreach ($manutencoes as $row): ?>
                         <?php $concluido = strtoupper((string) $row['status']) === 'CONCLUIDO'; ?>
                         <tr>
-                            <td><?php echo e($row['equipamento']); ?></td>
-                            <td><?php echo e($row['loja']); ?></td>
+                            <td data-label="Equipamento"><?php echo e($row['equipamento']); ?></td>
+                            <td data-label="Loja"><?php echo e($row['loja']); ?></td>
 
-                            <td><?php echo e($row['serial'] ?: 'N/A'); ?></td>
-                            <td><?php echo e(date('d/m/Y H:i', strtotime((string) $row['data_registro']))); ?></td>
-                            <td><?php echo e($row['usuario']); ?></td>
-                            <td>
+                            <td data-label="Serial"><?php echo e($row['serial'] ?: 'N/A'); ?></td>
+                            <td data-label="Data de envio"><?php echo e(date('d/m/Y H:i', strtotime((string) $row['data_registro']))); ?></td>
+                            <td data-label="Usuário"><?php echo e($row['usuario']); ?></td>
+                            <td data-label="Ações">
                                 <div class="maintenance-actions">
                                     <button class="btn js-view-description" type="button" data-description="<?php echo e($row['descricao']); ?>">Visualizar</button>
                                     <a class="btn" href="manutencao.php?editar=<?php echo (int) $row['id_manutencao']; ?>">Editar</a>
@@ -346,14 +457,40 @@ adminPageStart('Manutenção');
         </div>
     <?php endif; ?>
     <?php if ($totalPaginas > 1): ?>
+        <?php
+        if ($totalPaginas <= 7) {
+            $paginasVisiveis = range(1, $totalPaginas);
+        } elseif ($pagina <= 4) {
+            $paginasVisiveis = [1, 2, 3, 4, 5, '...', $totalPaginas];
+        } elseif ($pagina >= $totalPaginas - 3) {
+            $paginasVisiveis = [1, '...', $totalPaginas - 4, $totalPaginas - 3, $totalPaginas - 2, $totalPaginas - 1, $totalPaginas];
+        } else {
+            $paginasVisiveis = [1, '...', $pagina - 1, $pagina, $pagina + 1, '...', $totalPaginas];
+        }
+        ?>
         <nav class="pagination" aria-label="Paginação">
-            <?php for ($i = 1; $i <= $totalPaginas; $i++): ?>
-                <?php if ($i === $pagina): ?><span class="active"><?php echo $i; ?></span>
-                <?php else: ?><a href="<?php echo e(pageUrl(['pagina' => $i])); ?>"><?php echo $i; ?></a>
+            <?php if ($pagina > 1): ?>
+                <a href="<?php echo e(pageUrl(['pagina' => $pagina - 1])); ?>" rel="prev">◀ Anterior</a>
+            <?php else: ?>
+                <span class="disabled" aria-disabled="true">◀ Anterior</span>
+            <?php endif; ?>
+            <?php foreach ($paginasVisiveis as $itemPagina): ?>
+                <?php if ($itemPagina === '...'): ?>
+                    <span class="ellipsis" aria-hidden="true">...</span>
+                <?php elseif ($itemPagina === $pagina): ?>
+                    <span class="active" aria-current="page"><?php echo $itemPagina; ?></span>
+                <?php else: ?>
+                    <a href="<?php echo e(pageUrl(['pagina' => $itemPagina])); ?>"><?php echo $itemPagina; ?></a>
                 <?php endif; ?>
-            <?php endfor; ?>
+            <?php endforeach; ?>
+            <?php if ($pagina < $totalPaginas): ?>
+                <a href="<?php echo e(pageUrl(['pagina' => $pagina + 1])); ?>" rel="next">Próximo ▶</a>
+            <?php else: ?>
+                <span class="disabled" aria-disabled="true">Próximo ▶</span>
+            <?php endif; ?>
         </nav>
-    <?php endif; ?></section>
+    <?php endif; ?>
+</section>
 <div class="maintenance-modal" id="descriptionModal" aria-hidden="true">
     <div class="maintenance-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="descriptionModalTitle">
         <div class="maintenance-modal-header"><h2 id="descriptionModalTitle">Descrição do Problema</h2><button class="btn js-close-description" type="button">Fechar</button></div>

@@ -50,24 +50,27 @@ $baseSql = "
     LEFT JOIN itens i ON i.id = m.item_id
     LEFT JOIN produtos p ON p.id = COALESCE(i.produto_id, m.produto_id)
     LEFT JOIN lojas l ON l.id = m.loja_id
+    LEFT JOIN setores s ON s.id = m.setor_id
     {$whereSql}
 ";
 
 $countStmt = $pdo->prepare("SELECT COUNT(*) {$baseSql}");
 $countStmt->execute($params);
 $total = (int) $countStmt->fetchColumn();
-$totalPages = (int) ceil($total / $perPage);
+$totalPages = max(1, (int) ceil($total / $perPage));
+$page = min($page, $totalPages);
+$offset = ($page - 1) * $perPage;
 
 $stmt = $pdo->prepare("
     SELECT
         m.data_movimentacao,
-        COALESCE(u.nome, '-') AS usuario,
         m.tipo,
-        COALESCE(p.nome, '-') AS equipamento,
         COALESCE(l.nome, '-') AS loja,
-        COALESCE(m.solicitante_nome, '-') AS solicitante,
-        m.status,
-        COALESCE(m.justificativa, '') AS justificativa
+        COALESCE(s.nome, '-') AS setor,
+        COALESCE(p.nome, '-') AS equipamento,
+        COALESCE(m.quantidade, 0) AS quantidade,
+        COALESCE(NULLIF(TRIM(i.serial), ''), 'N/A') AS serial,
+        COALESCE(u.nome, '-') AS usuario
     {$baseSql}
     ORDER BY m.data_movimentacao DESC
     LIMIT :limit OFFSET :offset
@@ -88,20 +91,111 @@ $statusList = $pdo->query("SELECT DISTINCT status FROM movimentacoes WHERE statu
 adminPageStart('Movimentações');
 ?>
 <style>
-    .mov-filters { grid-template-columns: repeat(4, minmax(170px, 1fr)); align-items: end; }
-    .filter-actions { display: flex; gap: 10px; align-items: center; justify-content: flex-end; grid-column: 1 / -1; }
-    .mov-table table { table-layout: fixed; }
-    .mov-table th:nth-child(1), .mov-table td:nth-child(1) { width: 132px; }
-    .mov-table th:nth-child(3), .mov-table td:nth-child(3) { width: 95px; }
-    .mov-table th:nth-child(7), .mov-table td:nth-child(7) { width: 148px; }
-    .mov-table th:nth-child(8), .mov-table td:nth-child(8) { width: 76px; text-align: center; }
-    .reason-eye { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 8px; display: inline-grid; place-items: center; color: #fff; background: rgba(255,255,255,.035); cursor: help; position: relative; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
-    .reason-eye:hover, .reason-eye:focus-visible { border-color: rgba(229,9,20,.58); background: rgba(229,9,20,.1); transform: translateY(-1px); outline: none; }
-    .reason-eye svg { width: 18px; height: 18px; }
-    .reason-eye::after { content: attr(data-reason); position: absolute; right: 0; bottom: calc(100% + 10px); width: min(320px, 70vw); padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #10151c; color: #fff; box-shadow: 0 16px 32px rgba(0,0,0,.36); font-size: 12px; line-height: 1.35; text-align: left; white-space: normal; opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity .16s ease, transform .16s ease; z-index: 20; }
-    .reason-eye:hover::after, .reason-eye:focus-visible::after { opacity: 1; transform: translateY(0); }
-    @media (max-width: 980px) { .mov-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filter-actions { justify-content: flex-start; } .mov-table table { table-layout: auto; } }
+    .mov-filters {
+        grid-template-columns: repeat(4, minmax(170px, 1fr));
+        gap: 12px;
+        padding: 20px;
+        align-items: end;
+    }
+    .top { margin-bottom: 24px; }
+    .panel { margin-bottom: 18px; }
+    .mov-filters > * { min-width: 0; }
+    .mov-filters input,
+    .mov-filters select {
+        width: 100%;
+        height: 38px;
+    }
+    .filter-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: center;
+        gap: 10px;
+        grid-column: span 3;
+    }
+    .filter-actions .btn {
+        width: 100%;
+        min-height: 38px;
+    }
+    .mov-table .table-wrap { overflow: visible; }
+    .mov-table table {
+        width: 100%;
+        min-width: 0;
+        table-layout: auto;
+    }
+    .mov-table th {
+        text-align: center;
+        vertical-align: middle;
+        white-space: normal;
+    }
+    .mov-table td {
+        vertical-align: middle;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .mov-table th:nth-child(1),
+    .mov-table td:nth-child(1),
+    .mov-table th:nth-child(2),
+    .mov-table td:nth-child(2),
+    .mov-table th:nth-child(3),
+    .mov-table td:nth-child(3),
+    .mov-table th:nth-child(7),
+    .mov-table td:nth-child(7),
+    .mov-table th:nth-child(8),
+    .mov-table td:nth-child(8) {
+        text-align: center;
+    }
+    .mov-table .serial {
+        color: #dce2ea;
+        font-variant-numeric: tabular-nums;
+    }
+    @media (max-width: 980px) {
+        .mov-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .filter-actions { grid-column: 1 / -1; }
+    }
+    @media (max-width: 720px) {
+        .mov-table td { text-align: left !important; }
+    }
+    .mov-table .table-wrap,
+    .mov-table table { width: 100%; }
+    .mov-table th,
+    .mov-table td { padding: 14px 18px; vertical-align: middle; }
+    .empty { padding: 18px; }
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        min-height: 72px;
+        padding: 16px 18px;
+        border-top: 1px solid rgba(255, 255, 255, .08);
+    }
+    .pagination a,
+    .pagination span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 36px;
+        height: 36px;
+        padding: 0 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+        transition: background .2s ease, border-color .2s ease, color .2s ease;
+    }
+    .pagination a:hover { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .18); color: #fff; }
+    .pagination .active { background: var(--red); border-color: var(--red); color: #fff; }
+    .pagination .disabled { cursor: not-allowed; opacity: .38; }
+    .pagination .ellipsis { min-width: 28px; padding: 0 4px; border-color: transparent; }
+    @media (max-width: 720px) {
+        .filter-actions { grid-template-columns: 1fr; }
+        .pagination { justify-content: flex-end; flex-wrap: wrap; }
+    }
 </style>
+
 <section class="top">
     <div>
         <h1>Movimentações</h1>
@@ -160,7 +254,10 @@ adminPageStart('Movimentações');
         </select>
     </label>
     <label>Solicitante<input type="text" name="solicitante" value="<?php echo e($_GET['solicitante'] ?? ''); ?>" placeholder="Nome"></label>
-    <label class="limit-control" aria-label="Quantidade de registros"><span class="filter-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg></span>
+    <label class="limit-control" aria-label="Quantidade de registros">
+        <span class="filter-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/></svg>
+        </span>
         <select name="limite" onchange="this.form.submit()">
             <?php foreach ($allowedLimits as $limit): ?>
                 <option value="<?php echo $limit; ?>" <?php echo $perPage === $limit ? 'selected' : ''; ?>><?php echo $limit; ?></option>
@@ -182,30 +279,29 @@ adminPageStart('Movimentações');
                 <thead>
                     <tr>
                         <th>Data</th>
-                        <th>Usuário</th>
+                        <th>Hora</th>
                         <th>Tipo</th>
-                        <th>Equipamento</th>
                         <th>Loja</th>
-                        <th>Solicitante</th>
-                        <th>Status</th>
-                        <th>Motivo</th>
+                        <th>Setor</th>
+                        <th>Equipamento</th>
+                        <th>Quantidade</th>
+                        <th>Serial</th>
+                        <th>Usuário responsável</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($movimentacoes as $row): ?>
+                        <?php $timestamp = strtotime((string) $row['data_movimentacao']); ?>
                         <tr>
-                            <td><?php echo e(date('d/m/Y H:i', strtotime((string) $row['data_movimentacao']))); ?></td>
-                            <td><?php echo e($row['usuario']); ?></td>
-                            <td><?php echo e($row['tipo']); ?></td>
-                            <td><?php echo e($row['equipamento']); ?></td>
+                            <td><?php echo e($timestamp ? date('d/m/Y', $timestamp) : '-'); ?></td>
+                            <td><?php echo e($timestamp ? date('H:i', $timestamp) : '-'); ?></td>
+                            <td><?php echo e(ucfirst(strtolower((string) $row['tipo']))); ?></td>
                             <td><?php echo e($row['loja']); ?></td>
-                            <td><?php echo e($row['solicitante']); ?></td>
-                            <td><span class="badge"><?php echo e(normalizeStatus($row['status'])); ?></span></td>
-                            <td>
-                                <span class="reason-eye" tabindex="0" data-reason="<?php echo e($row['justificativa'] !== '' ? $row['justificativa'] : 'Motivo não informado.'); ?>" aria-label="Ver descrição do problema">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                                </span>
-                            </td>
+                            <td><?php echo e($row['setor']); ?></td>
+                            <td><?php echo e($row['equipamento']); ?></td>
+                            <td><?php echo (int) $row['quantidade']; ?></td>
+                            <td class="serial"><?php echo e($row['serial'] ?: 'N/A'); ?></td>
+                            <td><?php echo e($row['usuario']); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -214,14 +310,37 @@ adminPageStart('Movimentações');
     <?php endif; ?>
 
     <?php if ($totalPages > 1): ?>
+        <?php
+        if ($totalPages <= 7) {
+            $paginasVisiveis = range(1, $totalPages);
+        } elseif ($page <= 4) {
+            $paginasVisiveis = [1, 2, 3, 4, 5, '...', $totalPages];
+        } elseif ($page >= $totalPages - 3) {
+            $paginasVisiveis = [1, '...', $totalPages - 4, $totalPages - 3, $totalPages - 2, $totalPages - 1, $totalPages];
+        } else {
+            $paginasVisiveis = [1, '...', $page - 1, $page, $page + 1, '...', $totalPages];
+        }
+        ?>
         <nav class="pagination" aria-label="Paginação">
-            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                <?php if ($i === $page): ?>
-                    <span class="active"><?php echo $i; ?></span>
+            <?php if ($page > 1): ?>
+                <a href="<?php echo e(pageUrl(['pagina' => $page - 1])); ?>" rel="prev">◀ Anterior</a>
+            <?php else: ?>
+                <span class="disabled" aria-disabled="true">◀ Anterior</span>
+            <?php endif; ?>
+            <?php foreach ($paginasVisiveis as $itemPagina): ?>
+                <?php if ($itemPagina === '...'): ?>
+                    <span class="ellipsis" aria-hidden="true">...</span>
+                <?php elseif ($itemPagina === $page): ?>
+                    <span class="active" aria-current="page"><?php echo $itemPagina; ?></span>
                 <?php else: ?>
-                    <a href="<?php echo e(pageUrl(['pagina' => $i])); ?>"><?php echo $i; ?></a>
+                    <a href="<?php echo e(pageUrl(['pagina' => $itemPagina])); ?>"><?php echo $itemPagina; ?></a>
                 <?php endif; ?>
-            <?php endfor; ?>
+            <?php endforeach; ?>
+            <?php if ($page < $totalPages): ?>
+                <a href="<?php echo e(pageUrl(['pagina' => $page + 1])); ?>" rel="next">Próximo ▶</a>
+            <?php else: ?>
+                <span class="disabled" aria-disabled="true">Próximo ▶</span>
+            <?php endif; ?>
         </nav>
     <?php endif; ?>
 </section>

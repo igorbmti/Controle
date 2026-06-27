@@ -166,6 +166,8 @@ if (isset($_GET['msg'])) {
 adminPageStart('Usuários');
 ?>
 <style>
+    .top { margin-bottom: 24px; }
+    .panel { margin-bottom: 18px; }
     .messages { display: grid; gap: 10px; margin-bottom: 18px; }
     .message {
         border: 1px solid rgba(39, 184, 77, .42);
@@ -183,27 +185,35 @@ adminPageStart('Usuários');
     .form-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px;
-        padding: 18px;
+        gap: 12px;
+        padding: 20px;
     }
     .form-grid .full { grid-column: 1 / -1; }
     .form-actions {
         display: flex;
         justify-content: flex-end;
         gap: 10px;
-        padding: 0 18px 18px;
+        padding: 0 20px 20px;
     }
     .action-row {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
     }
-    .action-row form { margin: 0; }
+    .users-table .action-row form {
+        flex: 0 0 92px;
+        margin: 0;
+    }
     .btn.small {
-        min-height: 32px;
-        padding: 0 10px;
+        width: 92px;
+        height: 38px;
+        min-height: 38px;
+        padding: 0 12px;
         font-size: 13px;
+        line-height: 1;
+        white-space: nowrap;
     }
+    .users-table .action-row form .btn { width: 100%; }
     .btn.danger {
         border-color: rgba(229, 9, 20, .6);
         color: #fff;
@@ -211,13 +221,13 @@ adminPageStart('Usuários');
     .detail-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 14px;
-        padding: 18px;
+        gap: 12px;
+        padding: 20px;
     }
     .detail-card {
         border: 1px solid var(--line);
         border-radius: var(--radius);
-        padding: 16px;
+        padding: 20px;
         background: rgba(255, 255, 255, .03);
     }
     .detail-card span {
@@ -230,16 +240,17 @@ adminPageStart('Usuários');
         font-size: 22px;
     }
     .section-title {
-        padding: 18px 18px 0;
+        padding: 20px 20px 0;
         margin: 0;
         font-size: 18px;
     }
     .users-toolbar {
         display: grid;
-        grid-template-columns: minmax(260px, 1fr) auto auto;
+        grid-template-columns: minmax(260px, 1fr) auto;
+        grid-auto-columns: auto;
         gap: 12px;
         align-items: end;
-        padding: 16px 18px;
+        padding: 20px;
     }
     .search-box {
         position: relative;
@@ -248,7 +259,7 @@ adminPageStart('Usuários');
     .search-box input {
         width: 100%;
         padding-left: 42px;
-        height: 42px;
+        height: 38px;
     }
     .search-box svg {
         position: absolute;
@@ -262,14 +273,75 @@ adminPageStart('Usuários');
     }
     .users-table table {
         table-layout: fixed;
+        min-width: 0;
     }
-    .users-table th:nth-child(7),
-    .users-table td:nth-child(7) { width: 260px; }
+    .users-table .table-wrap { overflow: visible; }
+    .users-table th,
+    .users-table td {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .users-table th:nth-child(6),
+    .users-table td:nth-child(6) { width: 320px; }
+    .users-table .action-row { flex-wrap: nowrap; }
+    .users-toolbar > * { min-width: 0; }
+    .form-grid input,
+    .form-grid select,
+    .users-toolbar input,
+    .users-toolbar select {
+        width: 100%;
+        height: 38px;
+    }
+    .users-toolbar .btn,
+    .form-actions .btn { min-height: 38px; }
+    .users-table .table-wrap,
+    .users-table table { width: 100%; }
+    .users-table th,
+    .users-table td { padding: 14px 18px; vertical-align: middle; }
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        min-height: 72px;
+        padding: 16px 18px;
+        border-top: 1px solid rgba(255, 255, 255, .08);
+    }
+    .pagination a,
+    .pagination span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 36px;
+        height: 36px;
+        padding: 0 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+        transition: background .2s ease, border-color .2s ease, color .2s ease;
+    }
+    .pagination a:hover {
+        background: rgba(255, 255, 255, .06);
+        border-color: rgba(255, 255, 255, .18);
+        color: #fff;
+    }
+    .pagination .active { background: var(--red); border-color: var(--red); color: #fff; }
+    .pagination .disabled { cursor: not-allowed; opacity: .38; }
+    .pagination .ellipsis { min-width: 28px; padding: 0 4px; border-color: transparent; }
     @media (max-width: 760px) {
         .form-grid,
         .detail-grid { grid-template-columns: 1fr; }
         .users-toolbar { grid-template-columns: 1fr; }
         .users-table table { table-layout: auto; }
+        .users-table th:nth-child(6),
+        .users-table td:nth-child(6) { width: auto; }
+        .users-table .action-row form,
+        .users-table .action-row .btn { width: 100%; flex-basis: auto; }
+        .pagination { justify-content: flex-end; flex-wrap: wrap; }
     }
 </style>
 
@@ -447,8 +519,6 @@ elseif ($acao === 'visualizar'):
             <div class="detail-card"><span>Perfil</span><strong><?php echo e(perfilUsuario($usuario['nivel'])); ?></strong></div>
             <div class="detail-card"><span>Status</span><strong><?php echo (int) $usuario['ativo'] === 1 ? 'Ativo' : 'Inativo'; ?></strong></div>
             <div class="detail-card"><span>Data de cadastro</span><strong><?php echo e(dataBr($usuario['data_criacao'])); ?></strong></div>
-        </div>
-        <div class="detail-grid">
             <div class="detail-card"><span>Movimentações realizadas</span><strong><?php echo $totalMovimentacoes; ?></strong></div>
             <div class="detail-card"><span>Entregas registradas</span><strong><?php echo $totalEntregas; ?></strong></div>
             <div class="detail-card"><span>Trocas registradas</span><strong><?php echo $totalTrocas; ?></strong></div>
@@ -513,7 +583,9 @@ else:
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM usuarios {$where}");
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
-    $totalPaginas = (int) ceil($total / $porPagina);
+    $totalPaginas = max(1, (int) ceil($total / $porPagina));
+    $pagina = min($pagina, $totalPaginas);
+    $offset = ($pagina - 1) * $porPagina;
 
     $stmt = $pdo->prepare("
         SELECT id, nome, usuario, nivel, ativo, data_criacao
@@ -590,15 +662,38 @@ else:
             </table>
         </div>
         <?php if ($totalPaginas > 1): ?>
-            <div class="pagination">
-                <?php for ($i = 1; $i <= $totalPaginas; $i++): ?>
-                    <?php if ($i === $pagina): ?>
-                        <span class="active"><?php echo $i; ?></span>
+            <?php
+            if ($totalPaginas <= 7) {
+                $paginasVisiveis = range(1, $totalPaginas);
+            } elseif ($pagina <= 4) {
+                $paginasVisiveis = [1, 2, 3, 4, 5, '...', $totalPaginas];
+            } elseif ($pagina >= $totalPaginas - 3) {
+                $paginasVisiveis = [1, '...', $totalPaginas - 4, $totalPaginas - 3, $totalPaginas - 2, $totalPaginas - 1, $totalPaginas];
+            } else {
+                $paginasVisiveis = [1, '...', $pagina - 1, $pagina, $pagina + 1, '...', $totalPaginas];
+            }
+            ?>
+            <nav class="pagination" aria-label="Paginação">
+                <?php if ($pagina > 1): ?>
+                    <a href="<?php echo e(pageUrl(['pagina' => $pagina - 1])); ?>" rel="prev">◀ Anterior</a>
+                <?php else: ?>
+                    <span class="disabled" aria-disabled="true">◀ Anterior</span>
+                <?php endif; ?>
+                <?php foreach ($paginasVisiveis as $itemPagina): ?>
+                    <?php if ($itemPagina === '...'): ?>
+                        <span class="ellipsis" aria-hidden="true">...</span>
+                    <?php elseif ($itemPagina === $pagina): ?>
+                        <span class="active" aria-current="page"><?php echo $itemPagina; ?></span>
                     <?php else: ?>
-                        <a href="<?php echo e(pageUrl(['pagina' => $i])); ?>"><?php echo $i; ?></a>
+                        <a href="<?php echo e(pageUrl(['pagina' => $itemPagina])); ?>"><?php echo $itemPagina; ?></a>
                     <?php endif; ?>
-                <?php endfor; ?>
-            </div>
+                <?php endforeach; ?>
+                <?php if ($pagina < $totalPaginas): ?>
+                    <a href="<?php echo e(pageUrl(['pagina' => $pagina + 1])); ?>" rel="next">Próximo ▶</a>
+                <?php else: ?>
+                    <span class="disabled" aria-disabled="true">Próximo ▶</span>
+                <?php endif; ?>
+            </nav>
         <?php endif; ?>
     </section>
 <?php endif; ?>
