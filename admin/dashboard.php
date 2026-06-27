@@ -1183,6 +1183,7 @@ function fetchAtividadesEstoque(array $filters): array
         LEFT JOIN produtos p ON p.id = ee.produto_id
         {$whereSql}
         ORDER BY ee.data_atualizacao DESC, ee.id DESC
+        LIMIT 5
         ",
         $params
     );
@@ -1636,7 +1637,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         body.sidebar-collapsed .brand > span:not(.brand-collapsed) { display: none; }
 
-        body.sidebar-collapsed .brand .brand-collapsed { display: inline-flex; width: 24px; height: 24px; margin: 0; align-items: center; justify-content: center; gap: 1px; font-size: 18px; line-height: 22px; font-weight: 900; }
+        body.sidebar-collapsed .brand .brand-collapsed { display: inline-flex; width: 32px; height: 32px; margin: 0; align-items: center; justify-content: center; gap: 1px; font-family: "Inter", "Segoe UI", Arial, sans-serif; font-size: 21px; line-height: 1; font-weight: 800; letter-spacing: 0; }
 
         body.sidebar-collapsed .brand .brand-collapsed span:first-child { display: inline; color: #fff; }
 
@@ -1817,6 +1818,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         .cards {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-auto-rows: 160px;
             gap: 22px;
             margin-bottom: 22px;
         }
@@ -1973,85 +1975,131 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .metric-card {
-            height: 148px;
-            min-height: 148px;
+            position: relative;
+            isolation: isolate;
+            width: 100%;
+            height: 100%;
+            min-height: 160px;
             padding: 20px;
             display: grid;
-            grid-template-columns: 46px minmax(0, 1fr);
+            grid-template-columns: 22px minmax(0, 1fr);
             gap: 14px;
             align-items: center;
             overflow: hidden;
-            transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+            border-radius: 18px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .16);
+            transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
         }
 
-        .metric-card,
+        .metric-card::before {
+            content: "";
+            position: absolute;
+            z-index: -1;
+            inset: 0 auto auto 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(174, 183, 197, .7), rgba(174, 183, 197, 0) 58%);
+            opacity: .55;
+        }
+
         .metric-card-link {
             cursor: pointer;
         }
 
         .metric-card:hover,
         .metric-card-link:hover {
-            border-color: rgba(229, 9, 20, .48);
-            transform: translateY(-4px);
-            box-shadow: 0 22px 48px rgba(0, 0, 0, .28);
+            border-color: rgba(255, 255, 255, .12);
+            transform: translateY(-3px);
+            box-shadow: 0 14px 28px rgba(0, 0, 0, .2);
         }
 
         .metric-card.stock-alert {
-            border-color: rgba(245, 179, 1, .48);
-            box-shadow: 0 18px 44px rgba(245, 179, 1, .08), 0 18px 44px rgba(0, 0, 0, .18);
+            border-color: var(--line);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .16);
         }
 
         .metric-card.stock-alert:hover {
-            border-color: rgba(245, 179, 1, .7);
-            box-shadow: 0 22px 48px rgba(245, 179, 1, .11), 0 22px 48px rgba(0, 0, 0, .24);
+            border-color: rgba(255, 255, 255, .12);
+            box-shadow: 0 14px 28px rgba(0, 0, 0, .2);
         }
 
+        .metric-card.stock-alert::before {
+            background: linear-gradient(90deg, rgba(255, 79, 88, .85), rgba(255, 79, 88, 0) 58%);
+        }
+
+        .metric-card-link:not(.stock-alert)::before,
+        .metric-card:has(.metric-trend.up)::before {
+            background: linear-gradient(90deg, rgba(78, 207, 107, .8), rgba(78, 207, 107, 0) 58%);
+        }
+
+        .metric-card:has(.metric-trend.down)::before {
+            background: linear-gradient(90deg, rgba(255, 79, 88, .85), rgba(255, 79, 88, 0) 58%);
+        }
+
+        .cards > .metric-card:nth-child(1) { order: 1; }
+        .cards > .metric-card:nth-child(2) { order: 3; }
+        .cards > .metric-card:nth-child(3) { order: 2; }
+        .cards > .metric-card:nth-child(4) { order: 4; }
+
         .metric-icon {
-            width: 46px;
-            height: 46px;
-            border-radius: var(--radius);
+            width: 22px;
+            height: 22px;
+            margin: 0;
+            border: 0;
+            border-radius: 0;
             display: grid;
             place-items: center;
-            font-weight: 900;
             color: #fff;
+            background: transparent;
+            box-shadow: none;
         }
 
         .metric-icon svg {
-            width: 22px;
-            height: 22px;
+            width: 20px;
+            height: 20px;
         }
 
-        .metric-icon.red { background: linear-gradient(135deg, var(--red), var(--red-2)); }
-        .metric-icon.danger { background: linear-gradient(135deg, rgba(245, 179, 1, .26), rgba(143, 96, 0, .34)); color: var(--yellow); }
-        .metric-icon.yellow { background: linear-gradient(135deg, rgba(245, 179, 1, .26), rgba(143, 96, 0, .34)); color: var(--yellow); }
-        .metric-icon.ok { background: linear-gradient(135deg, #17662d, #0b3318); color: #9ff3b1; }
+        .metric-icon.red,
+        .metric-icon.yellow { background: transparent; color: #fff; }
+        .metric-icon.danger { background: transparent; color: #ff656d; }
+        .metric-icon.ok { background: transparent; color: #62d97c; }
+        .metric-card:has(.metric-trend.up) .metric-icon { color: #62d97c; }
+        .metric-card:has(.metric-trend.down) .metric-icon { color: #ff656d; }
+        .cards > .metric-card:nth-child(1) .metric-icon,
+        .cards > .metric-card:nth-child(4) .metric-icon { color: #62d97c; }
+        .cards > .metric-card:nth-child(2) .metric-icon,
+        .cards > .metric-card:nth-child(3) .metric-icon { color: var(--red); }
+        .cards > .metric-card:nth-child(2)::before,
+        .cards > .metric-card:nth-child(3)::before {
+            background: linear-gradient(90deg, var(--red), rgba(229, 9, 20, 0) 58%);
+        }
 
         .metric-title {
-            color: rgba(255, 255, 255, .65);
-            font-size: 12px;
-            line-height: 1.2;
-            margin: 0 0 8px;
-            font-weight: 700;
-            letter-spacing: .8px;
+            color: rgba(255, 255, 255, .58);
+            font-size: 11px;
+            line-height: 1.25;
+            margin: 0 0 9px;
+            font-weight: 750;
+            letter-spacing: .72px;
             text-transform: uppercase;
             overflow-wrap: anywhere;
         }
 
         .metric-card > div:last-child {
             min-width: 0;
-            align-self: center;
+            align-self: stretch;
             display: flex;
             flex-direction: column;
             justify-content: center;
             overflow: hidden;
-            min-height: 100%;
         }
 
         .metric-value {
-            font-size: 24px;
-            font-weight: 700;
-            margin-bottom: 6px;
-            line-height: 1.15;
+            font-size: 28px;
+            font-weight: 750;
+            margin-bottom: 7px;
+            line-height: 1.1;
+            letter-spacing: -.45px;
             color: #fff;
             max-width: 100%;
             min-width: 0;
@@ -2066,25 +2114,25 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .metric-value.fit-small {
-            font-size: 21px;
+            font-size: 23px;
             line-height: 1.12;
         }
 
         .metric-value-row {
             display: flex;
             align-items: center;
-            gap: 9px;
-            margin-bottom: 6px;
+            gap: 10px;
+            margin-bottom: 7px;
             max-height: none;
             -webkit-line-clamp: unset;
             overflow: visible;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
         }
 
         .metric-value-row > span:first-child {
-            font-size: 24px;
-            line-height: 1.15;
-            font-weight: 700;
+            font-size: 32px;
+            line-height: 1;
+            font-weight: 780;
         }
 
         .metric-value-row .metric-value {
@@ -2099,36 +2147,36 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            min-height: 26px;
-            padding: 0 8px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, .055);
-            color: #dce3ed;
-            font-size: 12px;
+            min-height: auto;
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            color: #fff;
+            font-size: 11px;
             font-weight: 800;
             white-space: nowrap;
         }
 
         .metric-trend.up {
-            background: rgba(39, 184, 77, .14);
-            color: #73ed8d;
+            background: transparent;
+            color: #62d97c;
         }
 
         .metric-trend.down {
-            background: rgba(229, 9, 20, .16);
-            color: #ff7b82;
+            background: transparent;
+            color: #ff656d;
         }
 
         .metric-value.fit-tiny {
-            font-size: 18px;
+            font-size: 19px;
             line-height: 1.14;
         }
 
         .metric-meta {
-            color: #a7b0c0;
-            font-size: 13px;
+            color: #929cab;
+            font-size: 12px;
             font-weight: 500;
-            line-height: 1.25;
+            line-height: 1.35;
             margin-bottom: 0;
             white-space: normal;
             overflow-wrap: anywhere;
@@ -2401,7 +2449,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .panel-header {
-            min-height: 58px;
+            min-height: 64px;
             padding: 18px 22px;
             display: flex;
             align-items: center;
@@ -2818,13 +2866,24 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .movements-recent th,
         .movements-recent td {
-            padding-left: 9px;
-            padding-right: 9px;
+            padding: 14px 12px;
+            vertical-align: middle;
+            text-align: left;
             white-space: normal;
             overflow: visible;
             text-overflow: clip;
             overflow-wrap: anywhere;
-            line-height: 1.25;
+            line-height: 1.35;
+        }
+
+        @media (min-width: 769px) {
+            .movements-recent thead tr {
+                height: 48px;
+            }
+
+            .movements-recent tbody tr {
+                height: 64px;
+            }
         }
 
         .movements-recent .kind {
@@ -2836,12 +2895,14 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .movements-recent .status-with-reason {
             max-width: 100%;
-            gap: 5px;
+            gap: 10px;
+            flex-wrap: nowrap;
+            vertical-align: middle;
         }
 
         .movements-recent .badge {
             min-width: 0;
-            max-width: calc(100% - 29px);
+            max-width: calc(100% - 34px);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -2851,6 +2912,12 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .movements-recent .reason-eye {
             flex: 0 0 24px;
+        }
+
+        .movements-recent td:nth-child(4) {
+            font-size: 12px;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .movements-recent th:nth-child(2),
@@ -3100,6 +3167,10 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             font-weight: 900;
         }
 
+        .alert-toast .alert-row.active .alert-dot {
+            animation: alertPulse 2.4s ease-in-out infinite;
+        }
+
         .alert-dot svg {
             width: 15px;
             height: 15px;
@@ -3139,6 +3210,12 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             50% {
                 box-shadow: 0 0 0 5px rgba(245, 179, 1, 0);
                 transform: scale(1.04);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .alert-toast .alert-row.active .alert-dot {
+                animation: none;
             }
         }
 
@@ -3323,13 +3400,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             }
 
             .metric-card {
-                grid-template-columns: 54px 1fr;
-                padding: 18px;
+                grid-template-columns: 22px minmax(0, 1fr);
+                padding: 20px;
             }
 
             .title-icon {
                 width: 58px;
-                height: 58px;
+                height: 64px;
             }
 
             .page-title h1 {
@@ -3411,7 +3488,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             .page-title h1 { font-size: 24px; }
             .page-title p { font-size: 13px; }
             .cards, .dashboard-filters, .dashboard-grid { grid-template-columns: 1fr !important; }
-            .metric-card { min-height: auto; grid-template-columns: 46px minmax(0, 1fr); padding: 16px; }
+            .metric-card { min-height: 160px; grid-template-columns: 22px minmax(0, 1fr); padding: 20px; }
             .panel-header { align-items: flex-start; gap: 10px; flex-direction: column; }
             .recent-panel .panel-header { flex-direction: row; align-items: center; justify-content: space-between; }
             .recent-panel .panel-header h2 { font-size: 16px; line-height: 1.2; }
@@ -3491,6 +3568,70 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             .recent-panel .panel-header .ghost-button { width: auto; min-width: 78px; padding: 0 10px; }
             .recent-panel td { grid-template-columns: 88px minmax(0, 1fr); }
         }
+        /* Tipografia e dimensões fixas dos quatro cards superiores. */
+        .cards > .metric-card {
+            height: 160px;
+            min-height: 160px;
+            max-height: 160px;
+            padding: 20px;
+        }
+
+        .cards .metric-title {
+            min-width: 0;
+            font-size: 12px;
+            font-weight: 700;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .cards .metric-value,
+        .cards .metric-value.fit-small,
+        .cards .metric-value.fit-tiny,
+        .cards .metric-value-row > span:first-child {
+            display: block;
+            min-width: 0;
+            max-width: 100%;
+            max-height: none;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1.1;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            -webkit-line-clamp: unset;
+        }
+
+        .cards .metric-value-row {
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .cards .metric-meta {
+            min-width: 0;
+            min-height: 1.35em;
+            font-size: 13px;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .cards .metric-trend {
+            font-size: 13px;
+        }
+
+        .metric-card-link:not(.stock-alert) {
+            cursor: default;
+        }
+
+        .metric-card.stock-alert::before {
+            background: linear-gradient(90deg, #FACC15, rgba(250, 204, 21, 0) 58%);
+        }
+
+        .metric-icon.warning,
+        .cards > .metric-card.stock-alert:nth-child(4) .metric-icon {
+            color: #FACC15;
+        }
     </style>
 </head>
 <body>
@@ -3527,9 +3668,9 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4"/><path d="m15 5 4 4"/></svg>
                         <span>Manutenção</span>
                     </a>
-                    <a class="nav-item muted" href="relatorio_setores.php" title="Relatórios">
+                    <a class="nav-item muted" href="movimentacoes.php" title="Movimentações">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14h3v4H7z"/><path d="M12 9h3v9h-3z"/><path d="M17 6h3v12h-3z"/></svg>
-                        <span>Relatórios</span>
+                        <span>Movimentações</span>
                     </a>
                 </div>
             </nav>
@@ -3640,8 +3781,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         </div>
                     </article>
 
-                    <a class="metric-card metric-card-link <?php echo (int) $estoqueCritico['itens'] > 0 ? 'stock-alert' : ''; ?>" id="cardEstoqueLink" href="<?php echo e($estoqueCriticoUrl); ?>">
-                        <div class="metric-icon <?php echo (int) $estoqueCritico['itens'] > 0 ? 'danger' : 'ok'; ?>" id="cardEstoqueIcon">
+                    <a class="metric-card metric-card-link <?php echo (int) $estoqueCritico['itens'] > 0 ? 'stock-alert' : ''; ?>" id="cardEstoqueLink"<?php echo (int) $estoqueCritico['itens'] > 0 ? ' href="estoque.php"' : ''; ?>>
+                        <div class="metric-icon <?php echo (int) $estoqueCritico['itens'] > 0 ? 'warning' : 'ok'; ?>" id="cardEstoqueIcon">
                             <?php if ((int) $estoqueCritico['itens'] > 0): ?>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
                             <?php else: ?>
@@ -3690,7 +3831,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
                         <section class="panel recent-panel movements-recent">
                             <div class="panel-header">
-                                <h2>Chamados Recentes</h2>
+                                <h2>Atendimentos Recentes</h2>
                                 <a class="ghost-button" href="movimentacoes.php">Ver todas</a>
                             </div>
                             <div class="table-wrap">
@@ -3700,7 +3841,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                             <th>Usuário</th>
                                             <th>Tipo</th>
                                             <th>Item</th>
-                                                                                        <th>Serial</th>
+                                            <th>Serial</th>
                                             <th>Loja</th>
                                             <th>Solicitante</th>
                                             <th>Status</th>
@@ -3722,7 +3863,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                                     </span>
                                                 </td>
                                                 <td><?php echo e($row['equipamento']); ?></td>
-                                                                                                <td><?php echo e($row['serial'] ?: 'N/A'); ?></td>
+                                                <td><?php echo e($row['serial'] ?: 'N/A'); ?></td>
                                                 <td><?php echo e($row['loja']); ?></td>
                                                 <td><?php echo e($row['solicitante']); ?></td>
                                                 <td>
@@ -3833,7 +3974,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 </div>
                 <div class="alert-toast" id="alertToast" data-session-key="<?php echo e(session_id()); ?>" hidden>
                     <div class="alert-toast-header">
-                        <strong>Alertas do Sistema</strong>
+                        <strong>Alerta</strong>
                         <button type="button" class="alert-toast-close" aria-label="Fechar alerta">X</button>
                     </div>
                     <div class="alert-list" id="alertasList">
@@ -4095,7 +4236,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             trocaMeta.textContent = Number(troca.total || 0) > 0 ? `${Number(troca.total)} itens trocados` : '';
 
             const itensCriticos = Number(estoque.itens || 0);
-            estoqueIcon.className = `metric-icon ${itensCriticos > 0 ? 'danger' : 'ok'}`;
+            estoqueIcon.className = `metric-icon ${itensCriticos > 0 ? 'warning' : 'ok'}`;
             estoqueLink?.classList.toggle('stock-alert', itensCriticos > 0);
             estoqueIcon.innerHTML = itensCriticos > 0
                 ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>'
@@ -4105,9 +4246,11 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             estoqueMeta.textContent = '';
 
             if (estoqueLink) {
-                const params = new URLSearchParams();
-                params.set('critico', '1');
-                estoqueLink.href = `estoque.php?${params.toString()}`;
+                if (itensCriticos > 0) {
+                    estoqueLink.href = 'estoque.php';
+                } else {
+                    estoqueLink.removeAttribute('href');
+                }
             }
 
             fitMetricText();
@@ -4116,12 +4259,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         function fitMetricText() {
             document.querySelectorAll('[data-fit-text]').forEach((element) => {
                 element.classList.remove('fit-small', 'fit-tiny');
-                if (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth) {
-                    element.classList.add('fit-small');
-                }
-                if (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth) {
-                    element.classList.add('fit-tiny');
-                }
             });
         }
 
