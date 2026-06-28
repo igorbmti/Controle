@@ -1,0 +1,145 @@
+diff --git a/admin/estoque.php b/admin/estoque.php
+--- a/admin/estoque.php
++++ b/admin/estoque.php
+@@
+ require_once __DIR__ . '/admin_helpers.php';
++require_once __DIR__ . '/../includes/serial_control.php';
+@@
+-    $stmt = $pdo->prepare('SELECT id, nome FROM produtos WHERE nome = :nome LIMIT 1');
++    $stmt = $pdo->prepare('SELECT id, nome, controla_serial FROM produtos WHERE nome = :nome LIMIT 1');
+@@
+             $quantidade = max(0, (int) ($_POST['quantidade'] ?? 0));
+             $quantidadeAnterior = 0;
+@@
+-                    SELECT e.id, e.produto_id, e.quantidade
++                    SELECT e.id, e.produto_id, e.quantidade, p.controla_serial
+                     FROM estoque_equipamentos e
++                    INNER JOIN produtos p ON p.id = e.produto_id
+                     WHERE e.id = :id
+@@
+-                $stmtEstoque = $pdo->prepare('UPDATE estoque_equipamentos SET quantidade = :quantidade WHERE id = :id');
+-                $stmtEstoque->execute([
+-                    ':quantidade' => $quantidade,
+-                    ':id' => $estoqueId,
+-                ]);
++                if ((bool) $estoque['controla_serial']) {
++                    $quantidade = serialControlSincronizarEstoque($pdo, (int) $estoque['produto_id']);
++                } else {
++                    $stmtEstoque = $pdo->prepare('UPDATE estoque_equipamentos SET quantidade = :quantidade WHERE id = :id');
++                    $stmtEstoque->execute([
++                        ':quantidade' => $quantidade,
++                        ':id' => $estoqueId,
++                    ]);
++                }
+@@
+         if ($acao === 'novo_equipamento') {
+             $nome = trim((string) ($_POST['nome_equipamento'] ?? ''));
+             $quantidade = max(0, (int) ($_POST['quantidade_equipamento'] ?? 0));
+-            $serial = trim((string) ($_POST['serial_equipamento'] ?? ''));
+-            $serial = $serial !== '' ? $serial : 'N/A';
++            $controlaSerial = (int) ($_POST['controla_serial'] ?? 0) === 1;
++            $seriaisTexto = trim((string) ($_POST['seriais_equipamento'] ?? ''));
+@@
+             $produto = buscarProdutoPorNome($pdo, $nome);
+             if ($produto) {
+                 $produtoId = (int) $produto['id'];
++                $controlaSerial = $controlaSerial || (bool) $produto['controla_serial'];
++                $stmtProduto = $pdo->prepare('UPDATE produtos SET controla_serial = :controla_serial WHERE id = :id');
++                $stmtProduto->execute([
++                    ':controla_serial' => $controlaSerial ? 1 : 0,
++                    ':id' => $produtoId,
++                ]);
+             } else {
+-                $stmtProduto = $pdo->prepare('INSERT INTO produtos (nome, categoria, ativo) VALUES (:nome, :categoria, 1)');
+-                $stmtProduto->execute([':nome' => $nome, ':categoria' => 'Estoque']);
++                $stmtProduto = $pdo->prepare('INSERT INTO produtos (nome, categoria, ativo, controla_serial) VALUES (:nome, :categoria, 1, :controla_serial)');
++                $stmtProduto->execute([
++                    ':nome' => $nome,
++                    ':categoria' => 'Estoque',
++                    ':controla_serial' => $controlaSerial ? 1 : 0,
++                ]);
+                 $produtoId = (int) $pdo->lastInsertId();
+             }
+@@
+-            if ($estoque) {
++            if ($estoque && !$controlaSerial) {
+                 $stmtAtualizar = $pdo->prepare('UPDATE estoque_equipamentos SET quantidade = quantidade + :quantidade WHERE id = :id');
+@@
+-            } else {
++            } elseif (!$estoque) {
+                 $stmtInserir = $pdo->prepare('INSERT INTO estoque_equipamentos (produto_id, loja_id, quantidade) VALUES (:produto_id, NULL, :quantidade)');
+                 $stmtInserir->execute([
+                     ':produto_id' => $produtoId,
+-                    ':quantidade' => $quantidade,
++                    ':quantidade' => $controlaSerial ? 0 : $quantidade,
+                 ]);
+             }
+ 
+-            if ($serial !== 'N/A') {
+-                $stmtSerial = $pdo->prepare('SELECT id FROM itens WHERE serial = :serial LIMIT 1');
+-                $stmtSerial->execute([':serial' => $serial]);
+-                if ($stmtSerial->fetch()) {
+-                    throw new RuntimeException('Já existe um equipamento com este serial.');
+-                }
+-                $stmtItem = $pdo->prepare("INSERT INTO itens (produto_id, serial, patrimonio, status, observacao) VALUES (:produto_id, :serial, NULL, 'Estoque', :observacao)");
+-                $stmtItem->execute([
+-                    ':produto_id' => $produtoId,
+-                    ':serial' => $serial,
+-                    ':observacao' => 'Equipamento cadastrado pelo controle de estoque.',
+-                ]);
++            if ($controlaSerial) {
++                $seriais = $seriaisTexto !== ''
++                    ? serialControlNormalizarLista($seriaisTexto)
++                    : array_fill(0, max(1, $quantidade), 'N/A');
++                serialControlCadastrar($pdo, $produtoId, $nome, $seriais);
++                $quantidade = serialControlSincronizarEstoque($pdo, $produtoId);
+             }
+@@
+-        $erro = 'Não foi possível concluir a operação. Tente novamente.';
++        $erro = $e instanceof RuntimeException
++            ? $e->getMessage()
++            : 'Não foi possível concluir a operação. Tente novamente.';
+@@
+-        SELECT e.id, e.quantidade, p.nome
++        SELECT e.id, e.quantidade, p.nome, p.controla_serial
+@@
+         e.id,
++        e.produto_id,
+         p.nome,
+-        e.quantidade,
+-        COALESCE(NULLIF(MAX(i.serial), ''), 'N/A') AS serial,
++        p.controla_serial,
++        CASE
++            WHEN p.controla_serial = 1 THEN (
++                SELECT COUNT(*)
++                FROM equipamento_seriais esq
++                WHERE esq.id_equipamento = p.id
++                  AND esq.status = 'DISPONIVEL'
++            )
++            ELSE e.quantidade
++        END AS quantidade,
+         e.data_atualizacao
+     FROM estoque_equipamentos e
+     INNER JOIN produtos p ON p.id = e.produto_id
+-    LEFT JOIN itens i ON i.produto_id = e.produto_id
+     {$where}
+-    GROUP BY e.id, p.nome, e.quantidade, e.data_atualizacao
+     ORDER BY p.nome
+@@
+ $stmt->execute();
+ $estoques = $stmt->fetchAll();
++
++$seriaisPorProduto = [];
++$stmtSeriais = $pdo->query("
++    SELECT
++        es.id_equipamento,
++        es.serial,
++        es.status,
++        COALESCE(l.nome, '') AS loja
++    FROM equipamento_seriais es
++    LEFT JOIN lojas l ON l.id = es.loja_atual
++    ORDER BY es.id_equipamento, es.data_cadastro, es.id_serial
++");
++foreach ($stmtSeriais->fetchAll() as $serialRow) {
++    $seriaisPorProduto[(int) $serialRow['id_equipamento']][] = $serialRow;
++}

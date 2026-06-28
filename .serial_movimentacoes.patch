@@ -1,0 +1,144 @@
+diff --git a/admin/movimentacoes.php b/admin/movimentacoes.php
+--- a/admin/movimentacoes.php
++++ b/admin/movimentacoes.php
+@@
+ require_once __DIR__ . '/admin_helpers.php';
++require_once __DIR__ . '/../includes/serial_control.php';
+@@
+ $where = [];
++$busca = trim((string) ($_GET['busca'] ?? ''));
+@@
+ if (!empty($_GET['tipo'])) {
+     $where[] = 'm.tipo = :tipo';
+     $params[':tipo'] = $_GET['tipo'];
+ }
++if ($busca !== '') {
++    $where[] = '(p.nome LIKE :busca OR es.serial LIKE :busca OR i.serial LIKE :busca)';
++    $params[':busca'] = '%' . $busca . '%';
++}
+@@
+     LEFT JOIN itens i ON i.id = m.item_id
++    LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
+@@
+-        COALESCE(NULLIF(TRIM(i.serial), ''), 'N/A') AS serial,
+-        COALESCE(u.nome, '-') AS usuario
++        COALESCE(NULLIF(TRIM(es.serial), ''), NULLIF(TRIM(i.serial), ''), 'N/A') AS serial,
++        COALESCE(u.nome, '-') AS usuario,
++        COALESCE(es.status, '') AS status_serial
+@@
+ $movimentacoes = $stmt->fetchAll();
++
++$serialDetalhe = null;
++$historicoSerial = [];
++if ($busca !== '') {
++    $stmtSerial = $pdo->prepare("
++        SELECT
++            es.id_serial,
++            es.serial,
++            es.status,
++            p.nome AS equipamento,
++            COALESCE(l.nome, 'Estoque central') AS loja_atual,
++            (
++                SELECT MIN(m1.data_movimentacao)
++                FROM movimentacoes m1
++                WHERE m1.id_serial = es.id_serial
++                  AND UPPER(m1.tipo) = 'ENTREGA'
++            ) AS data_entrega,
++            (
++                SELECT MAX(m2.data_movimentacao)
++                FROM movimentacoes m2
++                WHERE m2.id_serial = es.id_serial
++                  AND UPPER(m2.tipo) = 'TROCA'
++            ) AS data_troca,
++            (
++                SELECT MAX(mt.data_registro)
++                FROM manutencoes mt
++                WHERE mt.id_serial = es.id_serial
++                  AND COALESCE(mt.ativo, 1) = 1
++            ) AS data_manutencao
++        FROM equipamento_seriais es
++        INNER JOIN produtos p ON p.id = es.id_equipamento
++        LEFT JOIN lojas l ON l.id = es.loja_atual
++        WHERE es.serial = :serial
++        LIMIT 1
++    ");
++    $stmtSerial->execute([':serial' => $busca]);
++    $serialDetalhe = $stmtSerial->fetch() ?: null;
++
++    if ($serialDetalhe) {
++        $stmtHistorico = $pdo->prepare("
++            SELECT
++                m.data_movimentacao AS data_evento,
++                m.tipo,
++                COALESCE(l.nome, '-') AS loja,
++                COALESCE(u.nome, '-') AS usuario,
++                m.status
++            FROM movimentacoes m
++            LEFT JOIN lojas l ON l.id = m.loja_id
++            LEFT JOIN usuarios u ON u.id = m.usuario_id
++            WHERE m.id_serial = :id_serial_mov
++            UNION ALL
++            SELECT
++                mt.data_registro AS data_evento,
++                'Manutenção' AS tipo,
++                COALESCE(lm.nome, '-') AS loja,
++                COALESCE(um.nome, '-') AS usuario,
++                mt.status
++            FROM manutencoes mt
++            LEFT JOIN lojas lm ON lm.id = mt.id_loja
++            LEFT JOIN usuarios um ON um.id = mt.id_usuario
++            WHERE mt.id_serial = :id_serial_man
++              AND COALESCE(mt.ativo, 1) = 1
++            ORDER BY data_evento DESC
++        ");
++        $stmtHistorico->execute([
++            ':id_serial_mov' => (int) $serialDetalhe['id_serial'],
++            ':id_serial_man' => (int) $serialDetalhe['id_serial'],
++        ]);
++        $historicoSerial = $stmtHistorico->fetchAll();
++    }
++}
+@@
+     .empty { padding: 18px; }
++    .serial-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 18px; margin-bottom: 18px; }
++    .serial-summary div { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.03); }
++    .serial-summary span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; text-transform: uppercase; }
++    .serial-history { margin-bottom: 18px; }
++    @media (max-width: 720px) { .serial-summary { grid-template-columns: 1fr; } }
+@@
+ <form class="panel filters mov-filters" method="GET">
++    <label>Equipamento ou Serial<input type="search" name="busca" value="<?php echo e($busca); ?>" placeholder="Nome ou número de série"></label>
+@@
+ </form>
++
++<?php if ($serialDetalhe): ?>
++    <section class="panel serial-summary">
++        <div><span>Serial</span><strong><?php echo e($serialDetalhe['serial']); ?></strong></div>
++        <div><span>Equipamento</span><strong><?php echo e($serialDetalhe['equipamento']); ?></strong></div>
++        <div><span>Loja atual</span><strong><?php echo e($serialDetalhe['loja_atual']); ?></strong></div>
++        <div><span>Status atual</span><strong><?php echo e(serialControlStatusLabel((string) $serialDetalhe['status'])); ?></strong></div>
++        <div><span>Data da entrega</span><strong><?php echo e($serialDetalhe['data_entrega'] ? date('d/m/Y H:i', strtotime((string) $serialDetalhe['data_entrega'])) : '-'); ?></strong></div>
++        <div><span>Data da troca</span><strong><?php echo e($serialDetalhe['data_troca'] ? date('d/m/Y H:i', strtotime((string) $serialDetalhe['data_troca'])) : '-'); ?></strong></div>
++        <div><span>Data da manutenção</span><strong><?php echo e($serialDetalhe['data_manutencao'] ? date('d/m/Y H:i', strtotime((string) $serialDetalhe['data_manutencao'])) : '-'); ?></strong></div>
++    </section>
++    <section class="panel serial-history">
++        <div class="stock-summary"><strong>Histórico completo do serial</strong></div>
++        <div class="table-wrap">
++            <table>
++                <thead><tr><th>Data</th><th>Evento</th><th>Loja</th><th>Usuário</th><th>Status</th></tr></thead>
++                <tbody>
++                    <?php foreach ($historicoSerial as $evento): ?>
++                        <tr>
++                            <td><?php echo e(date('d/m/Y H:i', strtotime((string) $evento['data_evento']))); ?></td>
++                            <td><?php echo e($evento['tipo']); ?></td>
++                            <td><?php echo e($evento['loja']); ?></td>
++                            <td><?php echo e($evento['usuario']); ?></td>
++                            <td><?php echo e($evento['status']); ?></td>
++                        </tr>
++                    <?php endforeach; ?>
++                </tbody>
++            </table>
++        </div>
++    </section>
++<?php endif; ?>
+*** End Patch

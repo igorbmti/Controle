@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_helpers.php';
+require_once __DIR__ . '/../includes/serial_control.php';
 
 $pdo = getConnection();
 $idUsuario = (int) ($_SESSION['id_usuario'] ?? 0);
@@ -9,7 +10,7 @@ $erro = null;
 function buscarEquipamentosManutencao(PDO $pdo): array
 {
     $stmt = $pdo->query("
-        SELECT DISTINCT p.id, p.nome
+        SELECT DISTINCT p.id, p.nome, p.controla_serial
         FROM estoque_equipamentos e
         INNER JOIN produtos p ON p.id = e.produto_id
         WHERE COALESCE(p.ativo, 1) = 1
@@ -36,13 +37,34 @@ function statusManutencaoLabel(string $status): string
     return strtoupper($status) === 'CONCLUIDO' ? 'Concluído' : 'Em manutenção';
 }
 
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'seriais') {
+    header('Content-Type: application/json; charset=utf-8');
+    $produtoId = (int) ($_GET['produto_id'] ?? 0);
+    $idSerialAtual = (int) ($_GET['id_serial'] ?? 0);
+    $stmt = $pdo->prepare("
+        SELECT id_serial, serial, status
+        FROM equipamento_seriais
+        WHERE id_equipamento = :produto_id
+          AND (status = 'DISPONIVEL' OR id_serial = :id_serial_atual)
+        ORDER BY serial, id_serial
+    ");
+    $stmt->execute([
+        ':produto_id' => $produtoId,
+        ':id_serial_atual' => $idSerialAtual,
+    ]);
+    echo json_encode($stmt->fetchAll(), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrfRequireValid();
     $acao = (string) ($_POST['acao'] ?? '');
 
     try {
         if ($acao === 'salvar') {
             $idManutencao = (int) ($_POST['id_manutencao'] ?? 0);
             $equipamentoId = (int) ($_POST['equipamento_id'] ?? 0);
+            $idSerial = (int) ($_POST['id_serial'] ?? 0);
             $lojaId = (int) ($_POST['loja_id'] ?? 0);
             $descricao = trim((string) ($_POST['descricao'] ?? ''));
             $status = strtoupper((string) ($_POST['status'] ?? 'EM_MANUTENCAO'));
@@ -52,10 +74,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Preencha equipamento, loja e descrição do problema.');
             }
 
+            $pdo->beginTransaction();
+            $stmtProduto = $pdo->prepare('SELECT nome, controla_serial FROM produtos WHERE id = :id LIMIT 1 FOR UPDATE');
+            $stmtProduto->execute([':id' => $equipamentoId]);
+            $produto = $stmtProduto->fetch();
+            if (!$produto) {
+                throw new RuntimeException('Equipamento não encontrado.');
+            }
+
+            $controlaSerial = (bool) $produto['controla_serial'];
+            $serialSelecionado = null;
+            $idItemManutencao = $equipamentoId;
+            if ($controlaSerial) {
+                if ($idSerial <= 0) {
+                    throw new RuntimeException('Selecione o serial do equipamento.');
+                }
+                $serialSelecionado = serialControlBuscar($pdo, $idSerial, $equipamentoId, true);
+                $mesmoRegistro = $idManutencao > 0
+                    && strtoupper((string) ($serialSelecionado['status'] ?? '')) === 'EM_MANUTENCAO';
+                if (!$mesmoRegistro) {
+                    serialControlValidarDisponivel($serialSelecionado);
+                }
+                $idItemManutencao = (int) ($serialSelecionado['id_item'] ?? 0);
+                if ($idItemManutencao <= 0) {
+                    $idItemManutencao = serialControlCriarItem($pdo, $equipamentoId, (string) $produto['nome'], (string) $serialSelecionado['serial']);
+                    $stmtVincular = $pdo->prepare('UPDATE equipamento_seriais SET id_item = :id_item WHERE id_serial = :id_serial');
+                    $stmtVincular->execute([':id_item' => $idItemManutencao, ':id_serial' => $idSerial]);
+                }
+            }
+
             if ($idManutencao > 0) {
                 $stmt = $pdo->prepare("
                     UPDATE manutencoes
                     SET id_item = :id_item,
+                        id_serial = :id_serial,
                         id_loja = :id_loja,
                         descricao = :descricao,
                         status = :status,
@@ -63,7 +115,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     WHERE id_manutencao = :id_manutencao
                 ");
                 $stmt->execute([
-                    ':id_item' => $equipamentoId,
+                    ':id_item' => $idItemManutencao,
+                    ':id_serial' => $controlaSerial ? $idSerial : null,
                     ':id_loja' => $lojaId,
                     ':descricao' => $descricao,
                     ':status' => $status,
@@ -72,11 +125,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             } else {
                 $stmt = $pdo->prepare("
-                    INSERT INTO manutencoes (id_item, id_loja, descricao, status, id_usuario, data_registro, data_conclusao, ativo)
-                    VALUES (:id_item, :id_loja, :descricao, :status, :id_usuario, NOW(), CASE WHEN :status_conclusao = 'CONCLUIDO' THEN NOW() ELSE NULL END, 1)
+                    INSERT INTO manutencoes (id_item, id_serial, id_loja, descricao, status, id_usuario, data_registro, data_conclusao, ativo)
+                    VALUES (:id_item, :id_serial, :id_loja, :descricao, :status, :id_usuario, NOW(), CASE WHEN :status_conclusao = 'CONCLUIDO' THEN NOW() ELSE NULL END, 1)
                 ");
                 $stmt->execute([
-                    ':id_item' => $equipamentoId,
+                    ':id_item' => $idItemManutencao,
+                    ':id_serial' => $controlaSerial ? $idSerial : null,
                     ':id_loja' => $lojaId,
                     ':descricao' => $descricao,
                     ':status' => $status,
@@ -85,31 +139,108 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
 
+            if ($controlaSerial) {
+                $novoStatusSerial = $status === 'CONCLUIDO' ? 'DISPONIVEL' : 'EM_MANUTENCAO';
+                $stmtSerial = $pdo->prepare('
+                    UPDATE equipamento_seriais
+                    SET status = :status,
+                        loja_atual = :loja_id
+                    WHERE id_serial = :id_serial
+                ');
+                $stmtSerial->execute([
+                    ':status' => $novoStatusSerial,
+                    ':loja_id' => $novoStatusSerial === 'DISPONIVEL' ? null : $lojaId,
+                    ':id_serial' => $idSerial,
+                ]);
+                $stmtItem = $pdo->prepare('UPDATE itens SET status = :status WHERE id = :id_item');
+                $stmtItem->execute([
+                    ':status' => $novoStatusSerial === 'DISPONIVEL' ? 'Estoque' : 'Manutenção',
+                    ':id_item' => $idItemManutencao,
+                ]);
+                serialControlSincronizarEstoque($pdo, $equipamentoId);
+            }
+
+            $pdo->commit();
+
             header('Location: manutencao.php?salvo=1');
             exit;
         }
 
         if ($acao === 'concluir') {
+            $pdo->beginTransaction();
+            $idManutencao = (int) ($_POST['id_manutencao'] ?? 0);
+            $stmtSerialAtual = $pdo->prepare('
+                SELECT m.id_serial, es.id_equipamento, es.id_item
+                FROM manutencoes m
+                LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
+                WHERE m.id_manutencao = :id_manutencao
+                LIMIT 1
+                FOR UPDATE
+            ');
+            $stmtSerialAtual->execute([':id_manutencao' => $idManutencao]);
+            $serialAtual = $stmtSerialAtual->fetch();
             $stmt = $pdo->prepare("
                 UPDATE manutencoes
                 SET status = 'CONCLUIDO',
                     data_conclusao = COALESCE(data_conclusao, NOW())
                 WHERE id_manutencao = :id_manutencao
             ");
-            $stmt->execute([':id_manutencao' => (int) ($_POST['id_manutencao'] ?? 0)]);
+            $stmt->execute([':id_manutencao' => $idManutencao]);
+            if (!empty($serialAtual['id_serial'])) {
+                $stmtSerial = $pdo->prepare("
+                    UPDATE equipamento_seriais
+                    SET status = 'DISPONIVEL', loja_atual = NULL
+                    WHERE id_serial = :id_serial
+                ");
+                $stmtSerial->execute([':id_serial' => (int) $serialAtual['id_serial']]);
+                $stmtItem = $pdo->prepare("UPDATE itens SET status = 'Estoque' WHERE id = :id_item");
+                $stmtItem->execute([':id_item' => (int) $serialAtual['id_item']]);
+                serialControlSincronizarEstoque($pdo, (int) $serialAtual['id_equipamento']);
+            }
+            $pdo->commit();
             header('Location: manutencao.php?concluido=1');
             exit;
         }
 
         if ($acao === 'excluir') {
+            $pdo->beginTransaction();
+            $idManutencao = (int) ($_POST['id_manutencao'] ?? 0);
+            $stmtAtual = $pdo->prepare('
+                SELECT m.id_serial, es.id_equipamento, es.id_item
+                FROM manutencoes m
+                LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
+                WHERE m.id_manutencao = :id_manutencao
+                LIMIT 1
+                FOR UPDATE
+            ');
+            $stmtAtual->execute([':id_manutencao' => $idManutencao]);
+            $serialAtual = $stmtAtual->fetch();
             $stmt = $pdo->prepare('UPDATE manutencoes SET ativo = 0 WHERE id_manutencao = :id_manutencao');
-            $stmt->execute([':id_manutencao' => (int) ($_POST['id_manutencao'] ?? 0)]);
+            $stmt->execute([':id_manutencao' => $idManutencao]);
+            if (!empty($serialAtual['id_serial'])) {
+                $stmtSerial = $pdo->prepare("
+                    UPDATE equipamento_seriais
+                    SET status = 'DISPONIVEL', loja_atual = NULL
+                    WHERE id_serial = :id_serial
+                      AND status = 'EM_MANUTENCAO'
+                ");
+                $stmtSerial->execute([':id_serial' => (int) $serialAtual['id_serial']]);
+                $stmtItem = $pdo->prepare("UPDATE itens SET status = 'Estoque' WHERE id = :id_item");
+                $stmtItem->execute([':id_item' => (int) $serialAtual['id_item']]);
+                serialControlSincronizarEstoque($pdo, (int) $serialAtual['id_equipamento']);
+            }
+            $pdo->commit();
             header('Location: manutencao.php?excluido=1');
             exit;
         }
     } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         error_log('Erro na manutenção: ' . $e->getMessage());
-        $erro = 'Não foi possível concluir a operação. Tente novamente.';
+        $erro = $e instanceof RuntimeException
+            ? $e->getMessage()
+            : 'Não foi possível concluir a operação. Tente novamente.';
     }
 }
 
@@ -126,10 +257,11 @@ if (isset($_GET['excluido'])) {
 $editando = null;
 if (!empty($_GET['editar'])) {
     $stmt = $pdo->prepare("
-        SELECT *
-        FROM manutencoes
-        WHERE id_manutencao = :id_manutencao
-          AND COALESCE(ativo, 1) = 1
+        SELECT m.*, COALESCE(es.id_equipamento, m.id_item) AS equipamento_id
+        FROM manutencoes m
+        LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
+        WHERE m.id_manutencao = :id_manutencao
+          AND COALESCE(m.ativo, 1) = 1
         LIMIT 1
     ");
     $stmt->execute([':id_manutencao' => (int) $_GET['editar']]);
@@ -159,6 +291,7 @@ if ($busca !== '') {
 $baseSql = " FROM manutencoes m
  LEFT JOIN produtos p ON p.id = m.id_item
  LEFT JOIN itens i ON i.id = m.id_item
+ LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
  LEFT JOIN produtos pi ON pi.id = i.produto_id
  LEFT JOIN lojas l ON l.id = m.id_loja
  LEFT JOIN usuarios u ON u.id = m.id_usuario
@@ -171,7 +304,7 @@ $pagina = min($pagina, $totalPaginas);
 $offset = ($pagina - 1) * $porPagina;
 $stmt = $pdo->prepare("SELECT m.id_manutencao, COALESCE(p.nome, pi.nome, '-') AS equipamento,
  COALESCE(l.nome, '-') AS loja, COALESCE(u.nome, '-') AS usuario, m.descricao, m.status,
- m.data_registro, m.data_conclusao, COALESCE(NULLIF(i.serial, ''), 'N/A') AS serial " . $baseSql . "
+ m.data_registro, m.data_conclusao, COALESCE(NULLIF(es.serial, ''), NULLIF(i.serial, ''), 'N/A') AS serial, m.id_serial " . $baseSql . "
  ORDER BY m.data_registro DESC, m.id_manutencao DESC LIMIT :limite OFFSET :offset");
 foreach ($params as $chave => $valor) $stmt->bindValue($chave, $valor);
 $stmt->bindValue(':limite', $porPagina, PDO::PARAM_INT);
@@ -179,10 +312,31 @@ $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 $stmt->execute();
 $manutencoes = $stmt->fetchAll();
 
+$stmtHistorico = $pdo->query("
+    SELECT
+        m.id_manutencao,
+        COALESCE(p.nome, pi.nome, '-') AS equipamento,
+        COALESCE(l.nome, '-') AS loja,
+        COALESCE(NULLIF(es.serial, ''), NULLIF(i.serial, ''), 'N/A') AS serial,
+        COALESCE(u.nome, '-') AS usuario,
+        m.status,
+        m.data_registro,
+        m.data_conclusao
+    FROM manutencoes m
+    LEFT JOIN produtos p ON p.id = m.id_item
+    LEFT JOIN itens i ON i.id = m.id_item
+    LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
+    LEFT JOIN produtos pi ON pi.id = i.produto_id
+    LEFT JOIN lojas l ON l.id = m.id_loja
+    LEFT JOIN usuarios u ON u.id = m.id_usuario
+    ORDER BY m.data_registro DESC, m.id_manutencao DESC
+");
+$historicoManutencoes = $stmtHistorico->fetchAll();
+
 adminPageStart('Manutenção');
 ?>
 <style>
-    html, body { max-width: 100%; overflow-x: hidden; }
+    .main, .page { max-width: 100%; min-width: 0; }
     .top { margin-bottom: 24px; }
     .panel { width: 100%; max-width: 100%; min-width: 0; margin-bottom: 18px; }
     .maintenance-form {
@@ -191,10 +345,11 @@ adminPageStart('Manutenção');
         padding: 20px;
         align-items: end;
     }
-    .maintenance-form > label:nth-of-type(1) { grid-column: span 4; }
+    .maintenance-form > label:nth-of-type(1) { grid-column: span 3; }
     .maintenance-form > label:nth-of-type(2) { grid-column: span 3; }
-    .maintenance-form > label:nth-of-type(3) { grid-column: span 2; }
-    .maintenance-form .form-actions { grid-column: span 3; }
+    .maintenance-form > label:nth-of-type(3),
+    .maintenance-form > label:nth-of-type(4) { grid-column: span 2; }
+    .maintenance-form .form-actions { grid-column: span 2; }
     .maintenance-filter {
         grid-template-columns: minmax(260px, 1fr) auto minmax(200px, auto);
         gap: 12px;
@@ -232,20 +387,46 @@ adminPageStart('Manutenção');
         align-items: end;
     }
     .maintenance-form .btn,
-    .maintenance-filter .btn,
-    .maintenance-actions .btn {
+    .maintenance-filter .btn {
         width: 100%;
         min-height: 38px;
         white-space: normal;
         overflow-wrap: anywhere;
     }
     .maintenance-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(88px, 1fr));
+        align-items: stretch;
+        gap: 10px;
+        width: 100%;
+    }
+    .maintenance-actions .maintenance-action-slot {
+        display: block;
+        min-width: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+    }
+    .maintenance-action-button {
         display: flex;
         align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
+        justify-content: center;
+        box-sizing: border-box;
+        width: 100%;
+        min-width: 88px;
+        height: 40px;
+        min-height: 40px;
+        padding: 0 12px;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1;
+        text-align: center;
+        white-space: nowrap;
+        overflow-wrap: normal;
     }
-    .maintenance-actions form { min-width: 0; margin: 0; }
+    .maintenance-action-button:disabled { cursor: not-allowed; opacity: .45; transform: none; }
     .maintenance-badge {
         display: inline-flex;
         min-height: 28px;
@@ -271,6 +452,18 @@ adminPageStart('Manutenção');
     .maintenance-modal-header h2 { margin:0; font-size:16px; }
     .maintenance-modal-body { padding:18px; color:#dce2ea; line-height:1.65; white-space:pre-wrap; overflow-wrap:anywhere; }
     .maintenance-modal-footer { border-top:1px solid var(--line); justify-content:flex-end; }
+    .maintenance-history-dialog { width: min(1180px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+    .maintenance-history-body { min-height: 0; padding: 18px; overflow: auto; white-space: normal; }
+    .maintenance-history-filters { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .maintenance-history-filters label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .maintenance-history-filters input { width: 100%; height: 40px; }
+    .maintenance-history-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--muted); font-size: 12px; }
+    .maintenance-history-table-wrap { max-height: 52vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+    .maintenance-history-table { width: 100%; min-width: 820px; table-layout: auto; }
+    .maintenance-history-table th { position: sticky; z-index: 1; top: 0; background: #151c25; }
+    .maintenance-history-table th,
+    .maintenance-history-table td { padding: 12px 14px; text-align: left; white-space: nowrap; }
+    .maintenance-history-empty td { padding: 24px; text-align: center; color: var(--muted); }
     .maintenance-table .table-wrap { width: 100%; max-width: 100%; overflow: hidden; }
     .maintenance-table table { width: 100%; min-width: 0; table-layout: fixed; }
     .maintenance-table th,
@@ -281,7 +474,7 @@ adminPageStart('Manutenção');
         overflow-wrap: anywhere;
     }
     .maintenance-table th:last-child,
-    .maintenance-table td:last-child { width: 320px; }
+    .maintenance-table td:last-child { width: 300px; }
     .empty { padding: 18px; }
     .pagination {
         display: flex;
@@ -318,6 +511,7 @@ adminPageStart('Manutenção');
         .maintenance-form > label:nth-of-type(2) { grid-column: span 6; }
         .maintenance-form > label:nth-of-type(3) { grid-column: span 4; }
         .maintenance-form .form-actions { grid-column: span 8; }
+        .maintenance-history-filters { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
     }
     @media (max-width: 720px) {
         .maintenance-form > label,
@@ -326,11 +520,12 @@ adminPageStart('Manutenção');
         .maintenance-filter { grid-template-columns: 1fr; }
         .form-actions,
         .filter-actions { grid-auto-flow: row; grid-template-columns: 1fr; }
-        .maintenance-actions { flex-direction: column; align-items: stretch; }
-        .maintenance-actions form { width: 100%; }
+        .maintenance-actions { gap: 8px; }
         .maintenance-table th:last-child,
         .maintenance-table td:last-child { width: auto; }
         .pagination { justify-content: flex-end; flex-wrap: wrap; }
+        .maintenance-history-filters { grid-template-columns: 1fr; }
+        .maintenance-history-dialog { max-height: calc(100vh - 24px); }
     }
 </style>
 
@@ -339,6 +534,7 @@ adminPageStart('Manutenção');
         <h1>Manutenção</h1>
         <p>Registre equipamentos enviados para manutenção.</p>
     </div>
+    <button class="btn" id="openMaintenanceHistory" type="button">Histórico de Manutenções</button>
 </section>
 
 <?php if ($mensagem): ?>
@@ -349,6 +545,7 @@ adminPageStart('Manutenção');
 <?php endif; ?>
 
 <form class="panel filters maintenance-form" method="POST">
+    <?php echo csrfInput(); ?>
     <input type="hidden" name="acao" value="salvar">
     <input type="hidden" name="id_manutencao" value="<?php echo (int) ($editando['id_manutencao'] ?? 0); ?>">
 
@@ -356,10 +553,16 @@ adminPageStart('Manutenção');
         <select name="equipamento_id" required>
             <option value="">Selecione</option>
             <?php foreach ($equipamentos as $equipamento): ?>
-                <option value="<?php echo (int) $equipamento['id']; ?>" <?php echo (int) ($editando['id_item'] ?? 0) === (int) $equipamento['id'] ? 'selected' : ''; ?>>
+                <option value="<?php echo (int) $equipamento['id']; ?>" data-controla-serial="<?php echo (int) $equipamento['controla_serial']; ?>" <?php echo (int) ($editando['equipamento_id'] ?? $editando['id_item'] ?? 0) === (int) $equipamento['id'] ? 'selected' : ''; ?>>
                     <?php echo e($equipamento['nome']); ?>
                 </option>
             <?php endforeach; ?>
+        </select>
+    </label>
+
+    <label id="maintenanceSerialField" hidden>Serial
+        <select name="id_serial" id="maintenanceSerialSelect" data-current="<?php echo (int) ($editando['id_serial'] ?? 0); ?>">
+            <option value="">Selecione o serial</option>
         </select>
     </label>
 
@@ -434,19 +637,26 @@ adminPageStart('Manutenção');
                             <td data-label="Usuário"><?php echo e($row['usuario']); ?></td>
                             <td data-label="Ações">
                                 <div class="maintenance-actions">
-                                    <button class="btn js-view-description" type="button" data-description="<?php echo e($row['descricao']); ?>">Visualizar</button>
-                                    <a class="btn" href="manutencao.php?editar=<?php echo (int) $row['id_manutencao']; ?>">Editar</a>
+                                    <div class="maintenance-action-slot">
+                                        <button class="btn maintenance-action-button js-view-description" type="button" data-description="<?php echo e($row['descricao']); ?>">Visualizar</button>
+                                    </div>
                                     <?php if (!$concluido): ?>
-                                        <form method="POST" style="display:inline;">
+                                        <form class="maintenance-action-slot" method="POST">
+                                            <?php echo csrfInput(); ?>
                                             <input type="hidden" name="acao" value="concluir">
                                             <input type="hidden" name="id_manutencao" value="<?php echo (int) $row['id_manutencao']; ?>">
-                                            <button class="btn" type="submit">Concluir</button>
+                                            <button class="btn maintenance-action-button" type="submit">Concluir</button>
                                         </form>
+                                    <?php else: ?>
+                                        <div class="maintenance-action-slot">
+                                            <button class="btn maintenance-action-button" type="button" disabled>Concluir</button>
+                                        </div>
                                     <?php endif; ?>
-                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Confirmar remoção deste registro?');">
+                                    <form class="maintenance-action-slot" method="POST" onsubmit="return confirm('Confirmar remoção deste registro?');">
+                                        <?php echo csrfInput(); ?>
                                         <input type="hidden" name="acao" value="excluir">
                                         <input type="hidden" name="id_manutencao" value="<?php echo (int) $row['id_manutencao']; ?>">
-                                        <button class="btn" type="submit">Excluir</button>
+                                        <button class="btn maintenance-action-button" type="submit">Excluir</button>
                                     </form>
                                 </div>
                             </td>
@@ -491,6 +701,46 @@ adminPageStart('Manutenção');
         </nav>
     <?php endif; ?>
 </section>
+<div class="maintenance-modal" id="maintenanceHistoryModal" aria-hidden="true">
+    <div class="maintenance-modal-dialog maintenance-history-dialog" role="dialog" aria-modal="true" aria-labelledby="maintenanceHistoryTitle">
+        <div class="maintenance-modal-header">
+            <h2 id="maintenanceHistoryTitle">Histórico de Manutenções</h2>
+            <button class="btn js-close-maintenance-history" type="button">Fechar</button>
+        </div>
+        <div class="maintenance-history-body">
+            <div class="maintenance-history-filters">
+                <label>Equipamento<input type="search" id="historyEquipment" placeholder="Pesquisar equipamento"></label>
+                <label>Loja<input type="search" id="historyStore" placeholder="Pesquisar loja"></label>
+                <label>Serial<input type="search" id="historySerial" placeholder="Pesquisar serial"></label>
+                <label>Data<input type="date" id="historyDate"></label>
+                <label>Usuário<input type="search" id="historyUser" placeholder="Pesquisar usuário"></label>
+            </div>
+            <div class="maintenance-history-summary">
+                <span id="maintenanceHistoryCount"><?php echo count($historicoManutencoes); ?> registro(s)</span>
+                <button class="btn" id="clearMaintenanceHistory" type="button">Limpar pesquisa</button>
+            </div>
+            <div class="maintenance-history-table-wrap">
+                <table class="maintenance-history-table">
+                    <thead><tr><th>Equipamento</th><th>Loja</th><th>Serial</th><th>Data</th><th>Usuário</th><th>Status</th></tr></thead>
+                    <tbody id="maintenanceHistoryBody">
+                        <?php foreach ($historicoManutencoes as $historico): ?>
+                            <tr class="maintenance-history-row" data-date="<?php echo e(date('Y-m-d', strtotime((string) $historico['data_registro']))); ?>">
+                                <td data-history-field="equipment"><?php echo e($historico['equipamento']); ?></td>
+                                <td data-history-field="store"><?php echo e($historico['loja']); ?></td>
+                                <td data-history-field="serial"><?php echo e($historico['serial'] ?: 'N/A'); ?></td>
+                                <td><?php echo e(date('d/m/Y H:i', strtotime((string) $historico['data_registro']))); ?></td>
+                                <td data-history-field="user"><?php echo e($historico['usuario']); ?></td>
+                                <td><span class="maintenance-badge <?php echo strtoupper((string) $historico['status']) === 'CONCLUIDO' ? 'done' : ''; ?>"><?php echo e(statusManutencaoLabel((string) $historico['status'])); ?></span></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <tr class="maintenance-history-empty" id="maintenanceHistoryEmpty" <?php echo $historicoManutencoes ? 'hidden' : ''; ?>><td colspan="6">Nenhuma manutenção encontrada.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="maintenance-modal-footer"><button class="btn primary js-close-maintenance-history" type="button">Fechar</button></div>
+    </div>
+</div>
 <div class="maintenance-modal" id="descriptionModal" aria-hidden="true">
     <div class="maintenance-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="descriptionModalTitle">
         <div class="maintenance-modal-header"><h2 id="descriptionModalTitle">Descrição do Problema</h2><button class="btn js-close-description" type="button">Fechar</button></div>
@@ -500,6 +750,100 @@ adminPageStart('Manutenção');
 </div>
 <script>
 (() => {
+    const equipmentSelect = document.querySelector('select[name="equipamento_id"]');
+    const serialField = document.getElementById('maintenanceSerialField');
+    const serialSelect = document.getElementById('maintenanceSerialSelect');
+    const loadSerials = async () => {
+        const option = equipmentSelect?.options[equipmentSelect.selectedIndex];
+        const controlsSerial = Boolean(equipmentSelect?.value) && option?.dataset.controlaSerial === '1';
+        serialField.hidden = !controlsSerial;
+        serialSelect.required = controlsSerial;
+        serialSelect.disabled = !controlsSerial;
+        serialSelect.innerHTML = '<option value="">Selecione o serial</option>';
+        if (!controlsSerial || !equipmentSelect.value) return;
+        const current = Number(serialSelect.dataset.current || 0);
+        const response = await fetch(`manutencao.php?ajax=seriais&produto_id=${encodeURIComponent(equipmentSelect.value)}&id_serial=${current}`);
+        const rows = await response.json();
+        rows.forEach((row) => {
+            const item = document.createElement('option');
+            item.value = row.id_serial;
+            item.textContent = row.serial;
+            item.selected = Number(row.id_serial) === current;
+            serialSelect.appendChild(item);
+        });
+    };
+    equipmentSelect?.addEventListener('change', () => {
+        serialSelect.dataset.current = '0';
+        loadSerials();
+    });
+    loadSerials();
+
+    const historyModal = document.getElementById('maintenanceHistoryModal');
+    const historyOpenButton = document.getElementById('openMaintenanceHistory');
+    const historyRows = Array.from(document.querySelectorAll('.maintenance-history-row'));
+    const historyEmpty = document.getElementById('maintenanceHistoryEmpty');
+    const historyCount = document.getElementById('maintenanceHistoryCount');
+    const historyFilters = {
+        equipment: document.getElementById('historyEquipment'),
+        store: document.getElementById('historyStore'),
+        serial: document.getElementById('historySerial'),
+        date: document.getElementById('historyDate'),
+        user: document.getElementById('historyUser'),
+    };
+    const normalizeHistoryText = (value) => String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('pt-BR')
+        .trim();
+    const filterMaintenanceHistory = () => {
+        const values = {
+            equipment: normalizeHistoryText(historyFilters.equipment?.value),
+            store: normalizeHistoryText(historyFilters.store?.value),
+            serial: normalizeHistoryText(historyFilters.serial?.value),
+            date: historyFilters.date?.value || '',
+            user: normalizeHistoryText(historyFilters.user?.value),
+        };
+        let visible = 0;
+        historyRows.forEach((row) => {
+            const matches = ['equipment', 'store', 'serial', 'user'].every((field) => {
+                const cell = row.querySelector(`[data-history-field="${field}"]`);
+                return !values[field] || normalizeHistoryText(cell?.textContent).includes(values[field]);
+            }) && (!values.date || row.dataset.date === values.date);
+            row.hidden = !matches;
+            if (matches) visible++;
+        });
+        if (historyEmpty) historyEmpty.hidden = visible !== 0;
+        if (historyCount) historyCount.textContent = `${visible} ${visible === 1 ? 'registro' : 'registros'}`;
+    };
+    const closeMaintenanceHistory = () => {
+        historyModal?.classList.remove('open');
+        historyModal?.setAttribute('aria-hidden', 'true');
+        historyOpenButton?.focus();
+    };
+    const openMaintenanceHistory = () => {
+        filterMaintenanceHistory();
+        historyModal?.classList.add('open');
+        historyModal?.setAttribute('aria-hidden', 'false');
+        historyFilters.equipment?.focus();
+    };
+    historyOpenButton?.addEventListener('click', openMaintenanceHistory);
+    if (new URLSearchParams(window.location.search).get('filtro')?.toUpperCase() === 'TODAS') {
+        openMaintenanceHistory();
+    }
+    Object.values(historyFilters).forEach((input) => {
+        input?.addEventListener(input.type === 'date' ? 'change' : 'input', filterMaintenanceHistory);
+    });
+    document.getElementById('clearMaintenanceHistory')?.addEventListener('click', () => {
+        Object.values(historyFilters).forEach((input) => { if (input) input.value = ''; });
+        filterMaintenanceHistory();
+        historyFilters.equipment?.focus();
+    });
+    historyModal?.querySelectorAll('.js-close-maintenance-history').forEach((button) => button.addEventListener('click', closeMaintenanceHistory));
+    historyModal?.addEventListener('click', (event) => { if (event.target === historyModal) closeMaintenanceHistory(); });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && historyModal?.classList.contains('open')) closeMaintenanceHistory();
+    });
+
     const modal = document.getElementById('descriptionModal');
     const body = document.getElementById('descriptionModalBody');
     if (!modal || !body) return;

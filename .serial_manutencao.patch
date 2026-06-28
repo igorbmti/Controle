@@ -1,0 +1,243 @@
+diff --git a/admin/manutencao.php b/admin/manutencao.php
+--- a/admin/manutencao.php
++++ b/admin/manutencao.php
+@@
+ require_once __DIR__ . '/admin_helpers.php';
++require_once __DIR__ . '/../includes/serial_control.php';
+@@
+-        SELECT DISTINCT p.id, p.nome
++        SELECT DISTINCT p.id, p.nome, p.controla_serial
+@@
+ function statusManutencaoLabel(string $status): string
+ {
+     return strtoupper($status) === 'CONCLUIDO' ? 'Concluído' : 'Em manutenção';
+ }
++
++if (isset($_GET['ajax']) && $_GET['ajax'] === 'seriais') {
++    header('Content-Type: application/json; charset=utf-8');
++    $produtoId = (int) ($_GET['produto_id'] ?? 0);
++    $idSerialAtual = (int) ($_GET['id_serial'] ?? 0);
++    $stmt = $pdo->prepare("
++        SELECT id_serial, serial, status
++        FROM equipamento_seriais
++        WHERE id_equipamento = :produto_id
++          AND (status = 'DISPONIVEL' OR id_serial = :id_serial_atual)
++        ORDER BY serial, id_serial
++    ");
++    $stmt->execute([
++        ':produto_id' => $produtoId,
++        ':id_serial_atual' => $idSerialAtual,
++    ]);
++    echo json_encode($stmt->fetchAll(), JSON_UNESCAPED_UNICODE);
++    exit;
++}
+@@
+             $equipamentoId = (int) ($_POST['equipamento_id'] ?? 0);
++            $idSerial = (int) ($_POST['id_serial'] ?? 0);
+@@
+             if ($equipamentoId <= 0 || $lojaId <= 0 || $descricao === '') {
+                 throw new RuntimeException('Preencha equipamento, loja e descrição do problema.');
+             }
++
++            $pdo->beginTransaction();
++            $stmtProduto = $pdo->prepare('SELECT nome, controla_serial FROM produtos WHERE id = :id LIMIT 1 FOR UPDATE');
++            $stmtProduto->execute([':id' => $equipamentoId]);
++            $produto = $stmtProduto->fetch();
++            if (!$produto) {
++                throw new RuntimeException('Equipamento não encontrado.');
++            }
++
++            $controlaSerial = (bool) $produto['controla_serial'];
++            $serialSelecionado = null;
++            $idItemManutencao = $equipamentoId;
++            if ($controlaSerial) {
++                if ($idSerial <= 0) {
++                    throw new RuntimeException('Selecione o serial do equipamento.');
++                }
++                $serialSelecionado = serialControlBuscar($pdo, $idSerial, $equipamentoId, true);
++                $mesmoRegistro = $idManutencao > 0
++                    && strtoupper((string) ($serialSelecionado['status'] ?? '')) === 'EM_MANUTENCAO';
++                if (!$mesmoRegistro) {
++                    serialControlValidarDisponivel($serialSelecionado);
++                }
++                $idItemManutencao = (int) ($serialSelecionado['id_item'] ?? 0);
++                if ($idItemManutencao <= 0) {
++                    $idItemManutencao = serialControlCriarItem($pdo, $equipamentoId, (string) $produto['nome'], (string) $serialSelecionado['serial']);
++                    $stmtVincular = $pdo->prepare('UPDATE equipamento_seriais SET id_item = :id_item WHERE id_serial = :id_serial');
++                    $stmtVincular->execute([':id_item' => $idItemManutencao, ':id_serial' => $idSerial]);
++                }
++            }
+@@
+-                    SET id_item = :id_item,
++                    SET id_item = :id_item,
++                        id_serial = :id_serial,
+@@
+-                    ':id_item' => $equipamentoId,
++                    ':id_item' => $idItemManutencao,
++                    ':id_serial' => $controlaSerial ? $idSerial : null,
+@@
+-                    INSERT INTO manutencoes (id_item, id_loja, descricao, status, id_usuario, data_registro, data_conclusao, ativo)
+-                    VALUES (:id_item, :id_loja, :descricao, :status, :id_usuario, NOW(), CASE WHEN :status_conclusao = 'CONCLUIDO' THEN NOW() ELSE NULL END, 1)
++                    INSERT INTO manutencoes (id_item, id_serial, id_loja, descricao, status, id_usuario, data_registro, data_conclusao, ativo)
++                    VALUES (:id_item, :id_serial, :id_loja, :descricao, :status, :id_usuario, NOW(), CASE WHEN :status_conclusao = 'CONCLUIDO' THEN NOW() ELSE NULL END, 1)
+@@
+-                    ':id_item' => $equipamentoId,
++                    ':id_item' => $idItemManutencao,
++                    ':id_serial' => $controlaSerial ? $idSerial : null,
+@@
+                 ]);
+             }
++
++            if ($controlaSerial) {
++                $novoStatusSerial = $status === 'CONCLUIDO' ? 'DISPONIVEL' : 'EM_MANUTENCAO';
++                $stmtSerial = $pdo->prepare('
++                    UPDATE equipamento_seriais
++                    SET status = :status,
++                        loja_atual = :loja_id
++                    WHERE id_serial = :id_serial
++                ');
++                $stmtSerial->execute([
++                    ':status' => $novoStatusSerial,
++                    ':loja_id' => $novoStatusSerial === 'DISPONIVEL' ? null : $lojaId,
++                    ':id_serial' => $idSerial,
++                ]);
++                $stmtItem = $pdo->prepare('UPDATE itens SET status = :status WHERE id = :id_item');
++                $stmtItem->execute([
++                    ':status' => $novoStatusSerial === 'DISPONIVEL' ? 'Estoque' : 'Manutenção',
++                    ':id_item' => $idItemManutencao,
++                ]);
++                serialControlSincronizarEstoque($pdo, $equipamentoId);
++            }
++
++            $pdo->commit();
+ 
+             header('Location: manutencao.php?salvo=1');
+@@
+         if ($acao === 'concluir') {
++            $pdo->beginTransaction();
++            $idManutencao = (int) ($_POST['id_manutencao'] ?? 0);
++            $stmtSerialAtual = $pdo->prepare('
++                SELECT m.id_serial, es.id_equipamento
++                FROM manutencoes m
++                LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
++                WHERE m.id_manutencao = :id_manutencao
++                LIMIT 1
++                FOR UPDATE
++            ');
++            $stmtSerialAtual->execute([':id_manutencao' => $idManutencao]);
++            $serialAtual = $stmtSerialAtual->fetch();
+             $stmt = $pdo->prepare("
+@@
+-            $stmt->execute([':id_manutencao' => (int) ($_POST['id_manutencao'] ?? 0)]);
++            $stmt->execute([':id_manutencao' => $idManutencao]);
++            if (!empty($serialAtual['id_serial'])) {
++                $stmtSerial = $pdo->prepare("
++                    UPDATE equipamento_seriais
++                    SET status = 'DISPONIVEL', loja_atual = NULL
++                    WHERE id_serial = :id_serial
++                ");
++                $stmtSerial->execute([':id_serial' => (int) $serialAtual['id_serial']]);
++                serialControlSincronizarEstoque($pdo, (int) $serialAtual['id_equipamento']);
++            }
++            $pdo->commit();
+             header('Location: manutencao.php?concluido=1');
+@@
+         if ($acao === 'excluir') {
+-            $stmt = $pdo->prepare('UPDATE manutencoes SET ativo = 0 WHERE id_manutencao = :id_manutencao');
+-            $stmt->execute([':id_manutencao' => (int) ($_POST['id_manutencao'] ?? 0)]);
++            $pdo->beginTransaction();
++            $idManutencao = (int) ($_POST['id_manutencao'] ?? 0);
++            $stmtAtual = $pdo->prepare('
++                SELECT m.id_serial, es.id_equipamento
++                FROM manutencoes m
++                LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
++                WHERE m.id_manutencao = :id_manutencao
++                LIMIT 1
++                FOR UPDATE
++            ');
++            $stmtAtual->execute([':id_manutencao' => $idManutencao]);
++            $serialAtual = $stmtAtual->fetch();
++            $stmt = $pdo->prepare('UPDATE manutencoes SET ativo = 0 WHERE id_manutencao = :id_manutencao');
++            $stmt->execute([':id_manutencao' => $idManutencao]);
++            if (!empty($serialAtual['id_serial'])) {
++                $stmtSerial = $pdo->prepare("
++                    UPDATE equipamento_seriais
++                    SET status = 'DISPONIVEL', loja_atual = NULL
++                    WHERE id_serial = :id_serial
++                      AND status = 'EM_MANUTENCAO'
++                ");
++                $stmtSerial->execute([':id_serial' => (int) $serialAtual['id_serial']]);
++                serialControlSincronizarEstoque($pdo, (int) $serialAtual['id_equipamento']);
++            }
++            $pdo->commit();
+@@
+     } catch (Throwable $e) {
++        if ($pdo->inTransaction()) {
++            $pdo->rollBack();
++        }
+         error_log('Erro na manutenção: ' . $e->getMessage());
+-        $erro = 'Não foi possível concluir a operação. Tente novamente.';
++        $erro = $e instanceof RuntimeException
++            ? $e->getMessage()
++            : 'Não foi possível concluir a operação. Tente novamente.';
+@@
+-        SELECT *
+-        FROM manutencoes
+-        WHERE id_manutencao = :id_manutencao
+-          AND COALESCE(ativo, 1) = 1
++        SELECT m.*, COALESCE(es.id_equipamento, m.id_item) AS equipamento_id
++        FROM manutencoes m
++        LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
++        WHERE m.id_manutencao = :id_manutencao
++          AND COALESCE(m.ativo, 1) = 1
+@@
+  LEFT JOIN itens i ON i.id = m.id_item
++ LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
+@@
+- m.data_registro, m.data_conclusao, COALESCE(NULLIF(i.serial, ''), 'N/A') AS serial " . $baseSql . "
++ m.data_registro, m.data_conclusao, COALESCE(NULLIF(es.serial, ''), NULLIF(i.serial, ''), 'N/A') AS serial, m.id_serial " . $baseSql . "
+@@
+-                <option value="<?php echo (int) $equipamento['id']; ?>" <?php echo (int) ($editando['id_item'] ?? 0) === (int) $equipamento['id'] ? 'selected' : ''; ?>>
++                <option value="<?php echo (int) $equipamento['id']; ?>" data-controla-serial="<?php echo (int) $equipamento['controla_serial']; ?>" <?php echo (int) ($editando['equipamento_id'] ?? $editando['id_item'] ?? 0) === (int) $equipamento['id'] ? 'selected' : ''; ?>>
+@@
+     </label>
++
++    <label id="maintenanceSerialField" hidden>Serial
++        <select name="id_serial" id="maintenanceSerialSelect" data-current="<?php echo (int) ($editando['id_serial'] ?? 0); ?>">
++            <option value="">Selecione o serial</option>
++        </select>
++    </label>
+ 
+     <label>Loja
+@@
+ <script>
+ (() => {
++    const equipmentSelect = document.querySelector('select[name="equipamento_id"]');
++    const serialField = document.getElementById('maintenanceSerialField');
++    const serialSelect = document.getElementById('maintenanceSerialSelect');
++    const loadSerials = async () => {
++        const option = equipmentSelect?.options[equipmentSelect.selectedIndex];
++        const controlsSerial = option?.dataset.controlaSerial === '1';
++        serialField.hidden = !controlsSerial;
++        serialSelect.required = controlsSerial;
++        serialSelect.innerHTML = '<option value="">Selecione o serial</option>';
++        if (!controlsSerial || !equipmentSelect.value) return;
++        const current = Number(serialSelect.dataset.current || 0);
++        const response = await fetch(`manutencao.php?ajax=seriais&produto_id=${encodeURIComponent(equipmentSelect.value)}&id_serial=${current}`);
++        const rows = await response.json();
++        rows.forEach((row) => {
++            const item = document.createElement('option');
++            item.value = row.id_serial;
++            item.textContent = row.serial;
++            item.selected = Number(row.id_serial) === current;
++            serialSelect.appendChild(item);
++        });
++    };
++    equipmentSelect?.addEventListener('change', () => {
++        serialSelect.dataset.current = '0';
++        loadSerials();
++    });
++    loadSerials();
++
+     const modal = document.getElementById('descriptionModal');
+*** End Patch

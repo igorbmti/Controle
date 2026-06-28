@@ -9,7 +9,7 @@ $nomeUsuario = (string) ($_SESSION['nome'] ?? 'Usuário');
 
 function e(?string $value): string
 {
-    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
 function dataBr(?string $data): string
@@ -182,11 +182,18 @@ if ($detalheId > 0) {
             m.*,
             COALESCE(l.nome, "-") AS loja,
             COALESCE(s.nome, "-") AS setor,
-            COALESCE(p.nome, "-") AS equipamento
+            COALESCE(p.nome, "-") AS equipamento,
+            COALESCE(NULLIF(m.solicitante_nome, ""), NULLIF(f.nome, ""), "-") AS solicitante,
+            COALESCE(NULLIF(u.nome, ""), "-") AS tecnico,
+            COALESCE(NULLIF(es.serial, ""), NULLIF(i.serial, ""), "N/A") AS serial
         FROM movimentacoes m
         LEFT JOIN lojas l ON l.id = m.loja_id
         LEFT JOIN setores s ON s.id = m.setor_id
         LEFT JOIN produtos p ON p.id = m.produto_id
+        LEFT JOIN funcionarios f ON f.id = m.funcionario_id
+        LEFT JOIN usuarios u ON u.id = m.usuario_id
+        LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
+        LEFT JOIN itens i ON i.id = m.item_id
         WHERE m.id = :id
           AND m.usuario_id = :usuario_id
         LIMIT 1
@@ -230,7 +237,7 @@ if ($detalheId > 0) {
         .profile strong { display:block; font-size:12px; line-height:1.2; }
         .profile span { display:inline-flex; align-items:center; gap:6px; color:#dce1ea; font-size:10.5px; margin-top:2px; }
         .online-dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 3px rgba(39,184,77,.12); }
-        .logout { display:inline-flex; align-items:center; gap:10px; min-height:44px; width:100%; padding:0 12px; font-size:14px; font-weight:700; border:1px solid transparent; border-radius:var(--radius); transition:background .2s ease,border-color .2s ease,transform .2s ease; }
+        .logout-form { margin:0; width:100%; } .logout { display:inline-flex; align-items:center; gap:10px; min-height:44px; width:100%; padding:0 12px; color:#fff; background:transparent; font:inherit; font-size:14px; font-weight:700; border:1px solid transparent; border-radius:var(--radius); cursor:pointer; transition:background .2s ease,border-color .2s ease,transform .2s ease; }
         .logout:hover { background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.075); transform:translateY(-1px); }
         .topbar { height:84px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; padding:0 32px; background:rgba(5,8,12,.48); }
         .mobile-menu { color:#fff; font-size:14px; font-weight:800; }
@@ -263,22 +270,25 @@ if ($detalheId > 0) {
         .pagination { display:flex; justify-content:flex-end; gap:8px; padding:16px 18px; }
         .pagination a, .pagination span { min-width:34px; height:34px; display:grid; place-items:center; border:1px solid var(--line); border-radius:7px; color:#fff; text-decoration:none; }
         .pagination .active { background:var(--red); border-color:var(--red); }
-        .detail { padding:22px; display:grid; gap:12px; }
-        .detail strong { color:#fff; }
-        .modal-backdrop { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.68); backdrop-filter:blur(8px); }
-        .modal-backdrop.open { display:flex; animation:modalFade .18s ease both; }
-        .delivery-modal { width:min(620px,100%); border:1px solid var(--line); border-radius:12px; background:linear-gradient(150deg,rgba(255,255,255,.055),transparent 42%),#10151c; box-shadow:0 24px 80px rgba(0,0,0,.55); overflow:hidden; }
+        .modal-backdrop { position:fixed; inset:0; z-index:1400; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.72); backdrop-filter:blur(8px); opacity:0; visibility:hidden; pointer-events:none; transition:opacity .24s ease,visibility .24s ease; }
+        .modal-backdrop.open { opacity:1; visibility:visible; pointer-events:auto; animation:modalFade .24s ease both; }
+        .delivery-modal { width:min(760px,100%); max-height:calc(100dvh - 48px); display:flex; flex-direction:column; border:1px solid var(--line); border-radius:12px; background:linear-gradient(150deg,rgba(255,255,255,.055),transparent 42%),#10151c; box-shadow:0 24px 80px rgba(0,0,0,.55); overflow:hidden; opacity:0; transform:translateY(14px) scale(.98); transition:opacity .24s ease,transform .24s ease; }
+        .modal-backdrop.open .delivery-modal { opacity:1; transform:translateY(0) scale(1); animation:modalRise .24s ease both; }
         .modal-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 20px; border-bottom:1px solid rgba(255,255,255,.08); }
         .modal-head h2 { margin:0; font-size:18px; }
-        .modal-close { width:34px; height:34px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.03); color:#fff; cursor:pointer; font-size:20px; line-height:1; }
-        .modal-body { padding:20px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
-        .modal-field { display:grid; gap:5px; min-width:0; }
+        .modal-close { width:34px; height:34px; flex:0 0 34px; border:1px solid var(--line); border-radius:8px; background:rgba(255,255,255,.03); color:#fff; cursor:pointer; font-size:20px; line-height:1; }
+        .modal-body { min-height:0; padding:20px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px 24px; overflow-y:auto; }
+        .modal-field { display:grid; align-content:start; gap:5px; min-width:0; }
         .modal-field.full { grid-column:1 / -1; }
         .modal-field span { color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
-        .modal-field strong { color:#fff; font-size:14px; line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
+        .modal-field strong { color:#fff; font-size:14px; line-height:1.45; white-space:normal; overflow-wrap:anywhere; }
+        .modal-field.full strong { white-space:pre-wrap; }
+        .modal-footer { display:flex; justify-content:flex-end; padding:16px 20px; border-top:1px solid rgba(255,255,255,.08); }
+        body.modal-open { overflow:hidden; }
         @keyframes modalFade { from{opacity:0} to{opacity:1} }
+        @keyframes modalRise { from{opacity:0;transform:translateY(14px) scale(.98)} to{opacity:1;transform:translateY(0) scale(1)} }
         @media (max-width:1050px) { .app{grid-template-columns:1fr}.sidebar{position:static;height:auto}.filters{grid-template-columns:repeat(2,minmax(0,1fr))} }
-        @media (max-width:640px) { .content{padding:22px}.filters{grid-template-columns:1fr}.filter-actions{justify-content:flex-start;flex-direction:column;align-items:stretch}.modal-body{grid-template-columns:1fr} }
+        @media (max-width:640px) { .content{padding:22px}.filters{grid-template-columns:1fr}.filter-actions{justify-content:flex-start;flex-direction:column;align-items:stretch}.modal-backdrop{padding:12px}.delivery-modal{max-height:calc(100dvh - 24px)}.modal-body{grid-template-columns:1fr;padding:18px}.modal-field.full{grid-column:auto}.modal-footer .btn{width:100%} }
 
         .mobile-menu-toggle,
         .mobile-sidebar-backdrop { display:none; }
@@ -316,6 +326,7 @@ if ($detalheId > 0) {
             .pagination { justify-content:center; flex-wrap:wrap; }
         }
         @media (max-width:420px) { .title-icon { width:52px !important; height:52px !important; } .page-title h1 { font-size:22px; } .brand { font-size:36px; } }
+
     </style>
 </head>
 <body>
@@ -336,7 +347,9 @@ if ($detalheId > 0) {
         </nav>
         <div class="sidebar-footer">
             <div class="profile"><div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg></div><div><strong><?php echo e($nomeUsuario); ?></strong><span><i class="online-dot"></i>Online</span></div></div>
-            <a class="logout" href="../logout.php"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>Sair</a>
+            <form class="logout-form" method="post" action="../logout.php">
+                <?php echo csrfInput(); ?><button class="logout" type="submit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>Sair</button>
+            </form>
         </div>
     </aside>
     <main>
@@ -388,19 +401,39 @@ if ($detalheId > 0) {
                 </form>
             </section>
             <?php if ($detalhe): ?>
-                <section class="panel">
-                    <div class="detail">
-                        <strong>Detalhes da movimentação #<?php echo (int) $detalhe['id']; ?></strong>
-                        <span>Data: <?php echo e(dataBr($detalhe['data_movimentacao'])); ?></span>
-                        <span>Equipamento: <?php echo e($detalhe['equipamento']); ?></span>
-                        <span>Loja: <?php echo e($detalhe['loja']); ?></span>
-                        <span>Setor: <?php echo e($detalhe['setor']); ?></span>
-                        <span>Quantidade: <?php echo (int) $detalhe['quantidade']; ?></span>
-                        <span>Tipo: <?php echo e($detalhe['tipo']); ?></span>
-                        <span>Status: <?php echo e($detalhe['status']); ?></span>
-                        <span>Justificativa: <?php echo e($detalhe['justificativa']); ?></span>
-                    </div>
-                </section>
+                <?php
+                    $detalheTimestamp = strtotime((string) $detalhe['data_movimentacao']);
+                    $detalheTipo = strtoupper((string) $detalhe['tipo']) === 'TROCA' ? 'Troca' : 'Entrega';
+                    $detalheSerial = trim((string) ($detalhe['serial'] ?? ''));
+                    $detalheObservacoes = trim((string) ($detalhe['descricao'] ?? ''));
+                ?>
+                <div class="modal-backdrop open" id="movementDetailModal" aria-hidden="false">
+                    <section class="delivery-modal" role="dialog" aria-modal="true" aria-labelledby="movementDetailTitle">
+                        <header class="modal-head">
+                            <h2 id="movementDetailTitle">Detalhes da movimentação</h2>
+                            <button class="modal-close js-close-movement-detail" type="button" aria-label="Fechar">×</button>
+                        </header>
+                        <div class="modal-body">
+                            <div class="modal-field"><span>Tipo da movimentação</span><strong><?php echo e($detalheTipo); ?></strong></div>
+                            <div class="modal-field"><span>Equipamento</span><strong><?php echo e($detalhe['equipamento']); ?></strong></div>
+                            <div class="modal-field"><span>Quantidade</span><strong><?php echo (int) $detalhe['quantidade']; ?></strong></div>
+                            <div class="modal-field"><span>Loja</span><strong><?php echo e($detalhe['loja']); ?></strong></div>
+                            <div class="modal-field"><span>Setor</span><strong><?php echo e($detalhe['setor']); ?></strong></div>
+                            <div class="modal-field"><span>Solicitante</span><strong><?php echo e($detalhe['solicitante']); ?></strong></div>
+                            <div class="modal-field"><span>Técnico responsável</span><strong><?php echo e($detalhe['tecnico']); ?></strong></div>
+                            <div class="modal-field"><span>Data</span><strong><?php echo e($detalheTimestamp ? date('d/m/Y', $detalheTimestamp) : '-'); ?></strong></div>
+                            <div class="modal-field"><span>Hora</span><strong><?php echo e($detalheTimestamp ? date('H:i', $detalheTimestamp) : '-'); ?></strong></div>
+                            <?php if ($detalheSerial !== '' && strcasecmp($detalheSerial, 'N/A') !== 0): ?>
+                                <div class="modal-field"><span>Serial</span><strong><?php echo e($detalheSerial); ?></strong></div>
+                            <?php endif; ?>
+                            <div class="modal-field full"><span>Justificativa</span><strong><?php echo e(trim((string) ($detalhe['justificativa'] ?? '')) ?: '-'); ?></strong></div>
+                            <?php if ($detalheObservacoes !== ''): ?>
+                                <div class="modal-field full"><span>Observações</span><strong><?php echo e($detalheObservacoes); ?></strong></div>
+                            <?php endif; ?>
+                        </div>
+                        <footer class="modal-footer"><button class="btn primary js-close-movement-detail" type="button">Fechar</button></footer>
+                    </section>
+                </div>
             <?php endif; ?>
             <section class="panel">
                 <div class="table-wrap">
@@ -452,8 +485,27 @@ if ($detalheId > 0) {
     </main>
 </div>
 <script>
-    function prepareResponsiveTables() {
-        document.querySelectorAll('table').forEach((table) => {
+    function setupMovementDetailModal() {
+        const modal = document.getElementById('movementDetailModal');
+        if (!modal) return;
+
+        const closeModal = () => {
+            modal.classList.remove('open');
+            modal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('modal-open');
+            const url = new URL(window.location.href);
+            url.searchParams.delete('detalhe');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        };
+
+        document.body.classList.add('modal-open');
+        modal.querySelector('.modal-close')?.focus();
+        modal.querySelectorAll('.js-close-movement-detail').forEach((button) => button.addEventListener('click', closeModal));
+        modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+        document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && modal.classList.contains('open')) closeModal(); });
+    }
+
+    function prepareResponsiveTables() {        document.querySelectorAll('table').forEach((table) => {
             const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim());
             table.querySelectorAll('tbody tr').forEach((row) => {
                 Array.from(row.children).forEach((cell, index) => {
@@ -479,6 +531,7 @@ if ($detalheId > 0) {
     }
     prepareResponsiveTables();
     setupMobileMenu();
+    setupMovementDetailModal();
     document.addEventListener('click', (event) => {
         const link = event.target.closest('a[href]');
         if (!link || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

@@ -5,7 +5,7 @@ verificarLogin('ADMIN');
 
 function e(?string $value): string
 {
-    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
 function fetchOneSafe(string $sql, array $fallback = []): array
@@ -459,7 +459,7 @@ function recentBaseSql(): string
                 COALESCE(l.nome, '-') AS loja,
                 m.loja_id,
                 COALESCE(p.nome, '-') AS equipamento,
-                COALESCE(NULLIF(i.serial, ''), 'N/A') AS serial,
+                COALESCE(NULLIF(es.serial, ''), NULLIF(i.serial, ''), 'N/A') AS serial,
 
                 m.tipo,
                 m.status
@@ -468,6 +468,7 @@ function recentBaseSql(): string
             LEFT JOIN lojas l ON l.id = m.loja_id
             LEFT JOIN produtos p ON p.id = m.produto_id
             LEFT JOIN itens i ON i.id = m.item_id
+            LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
             LEFT JOIN usuarios u ON u.id = m.usuario_id
         ) recentes
     ";
@@ -531,44 +532,8 @@ function fetchPorTipo(array $lojaIds = []): array
     );
 }
 
-function fetchAtividades(array $lojaIds = [], int $limit = 5): array
-{
-    [$lojaSql, $lojaParams] = lojaClause($lojaIds, 'm');
-    $params = array_merge($lojaParams, [':limit' => $limit]);
-
-    try {
-        $stmt = getConnection()->prepare(
-            "
-            SELECT
-                m.data_movimentacao AS data_entrega,
-                COALESCE(u.nome, '-') AS usuario,
-                COALESCE(p.nome, '-') AS equipamento,
-                m.tipo
-            FROM movimentacoes m
-            LEFT JOIN usuarios u ON u.id = m.usuario_id
-            LEFT JOIN produtos p ON p.id = m.produto_id
-            WHERE 1 = 1
-              {$lojaSql}
-            ORDER BY m.data_movimentacao DESC
-            LIMIT :limit
-            "
-        );
-
-        foreach ($params as $key => $value) {
-            $stmt->bindValue($key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
-        }
-
-        $stmt->execute();
-        return $stmt->fetchAll();
-    } catch (Throwable $e) {
-        error_log('Dashboard activity error: ' . $e->getMessage());
-        return [];
-    }
-}
-
 function summarizeTipos(array $porTipo): array
 {
-    $total = array_sum(array_map(static fn($row) => (int) $row['total'], $porTipo));
     $entregas = 0;
     $trocas = 0;
     $manutencoes = 0;
@@ -584,6 +549,8 @@ function summarizeTipos(array $porTipo): array
             $manutencoes = (int) $tipo['total'];
         }
     }
+
+    $total = $entregas + $trocas + $manutencoes;
 
     return [
         'total' => $total,
@@ -799,6 +766,7 @@ function fetchTotalMovimentacoes(array $filters): array
 function fetchSetorMaiorOperacao(array $filters): array
 {
     [$whereSql, $params] = buildMovimentacaoWhere($filters);
+    $whereSql .= ($whereSql ? ' AND ' : 'WHERE ') . "UPPER(m.tipo) IN ('ENTREGA', 'TROCA')";
 
     return fetchOnePrepared(
         "
@@ -967,6 +935,7 @@ function fetchGraficoPrincipal(array $filters, array $lojas): array
 function fetchTipoGerencial(array $filters): array
 {
     [$whereSql, $params] = buildMovimentacaoWhere($filters);
+    $whereSql .= ($whereSql ? ' AND ' : 'WHERE ') . "UPPER(m.tipo) IN ('ENTREGA', 'TROCA')";
     $rows = fetchAllPrepared(
         "
         SELECT UPPER(m.tipo) AS tipo, COALESCE(SUM(m.quantidade), 0) AS total
@@ -1001,6 +970,7 @@ function fetchTipoGerencial(array $filters): array
 function fetchProdutosMovimentados(array $filters, int $limit = 5): array
 {
     [$whereSql, $params] = buildMovimentacaoWhere($filters);
+    $whereSql .= ($whereSql ? ' AND ' : 'WHERE ') . "UPPER(m.tipo) IN ('ENTREGA', 'TROCA')";
     $params[':limit'] = $limit;
 
     try {
@@ -1093,6 +1063,7 @@ function fetchAlertasSistema(array $filters): array
 function fetchRecentesGerencial(array $filters, int $limit = 5): array
 {
     [$whereSql, $params] = buildMovimentacaoWhere($filters);
+    $whereSql .= ($whereSql ? ' AND ' : 'WHERE ') . "UPPER(m.tipo) IN ('ENTREGA', 'TROCA')";
     $params[':limit'] = $limit;
 
     try {
@@ -1103,7 +1074,7 @@ function fetchRecentesGerencial(array $filters, int $limit = 5): array
                 COALESCE(u.nome, '-') AS usuario,
                 COALESCE(l.nome, '-') AS loja,
                 COALESCE(p.nome, '-') AS equipamento,
-                COALESCE(NULLIF(i.serial, ''), 'N/A') AS serial,
+                COALESCE(NULLIF(es.serial, ''), NULLIF(i.serial, ''), 'N/A') AS serial,
 
                 COALESCE(m.solicitante_nome, f.nome, '-') AS solicitante,
                 m.tipo,
@@ -1114,6 +1085,7 @@ function fetchRecentesGerencial(array $filters, int $limit = 5): array
             LEFT JOIN lojas l ON l.id = m.loja_id
             LEFT JOIN produtos p ON p.id = m.produto_id
             LEFT JOIN itens i ON i.id = m.item_id
+            LEFT JOIN equipamento_seriais es ON es.id_serial = m.id_serial
             LEFT JOIN funcionarios f ON f.id = m.funcionario_id
             {$whereSql}
             ORDER BY m.data_movimentacao DESC, m.id DESC
@@ -1135,58 +1107,37 @@ function fetchRecentesGerencial(array $filters, int $limit = 5): array
     }
 }
 
-function dashboardUsuarioAtual(): string
+function fetchAtividadesEstoque(array $filters, int $limit = 5): array
 {
-    $nome = trim((string) ($_SESSION['nome'] ?? 'Administrador'));
-    return $nome !== '' ? $nome : 'Administrador';
-}
+    try {
+        $stmt = getConnection()->prepare(
+            "
+            SELECT
+                m.data_movimentacao AS data_entrega,
+                COALESCE(u.nome, 'Administrador') AS usuario,
+                COALESCE(NULLIF(p.nome, ''), 'Item não informado') AS equipamento,
+                ABS(COALESCE(m.quantidade, 0)) AS quantidade,
+                CASE
+                    WHEN UPPER(TRIM(m.tipo)) = 'ENTRADA' THEN 'adicionou'
+                    ELSE 'retirou'
+                END AS movimento,
+                m.tipo
+            FROM movimentacoes m
+            LEFT JOIN usuarios u ON u.id = m.usuario_id
+            LEFT JOIN produtos p ON p.id = m.produto_id
+            WHERE UPPER(TRIM(m.tipo)) IN ('ENTRADA', 'SAIDA', 'SAÍDA')
+            ORDER BY m.data_movimentacao DESC, m.id DESC
+            LIMIT :limit
+            "
+        );
 
-function buildEstoqueAtividadeWhere(array $filters, string $alias = 'ee'): array
-{
-    $where = [];
-    $params = [];
-
-    if (!empty($filters['data_inicial'])) {
-        $where[] = "{$alias}.data_atualizacao >= :estoque_data_inicial";
-        $params[':estoque_data_inicial'] = $filters['data_inicial'] . ' 00:00:00';
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        error_log('Dashboard atividades error: ' . $e->getMessage());
+        return [];
     }
-
-    if (!empty($filters['data_final'])) {
-        $where[] = "{$alias}.data_atualizacao < :estoque_data_final_next";
-        $params[':estoque_data_final_next'] = date('Y-m-d 00:00:00', strtotime($filters['data_final'] . ' +1 day'));
-    }
-
-    [$lojaSql, $lojaParams] = lojaClause($filters['loja_ids'] ?? [], $alias);
-    if ($lojaSql !== '') {
-        $where[] = preg_replace('/^\s*AND\s+/', '', $lojaSql);
-        $params = array_merge($params, $lojaParams);
-    }
-
-    return [$where ? 'WHERE ' . implode(' AND ', $where) : '', $params];
-}
-
-function fetchAtividadesEstoque(array $filters): array
-{
-    [$whereSql, $params] = buildEstoqueAtividadeWhere($filters);
-    $estoqueNomeColumn = columnExists('estoque_equipamentos', 'nome_equipamento') ? 'ee.nome_equipamento' : "''";
-    $params[':usuario_nome'] = dashboardUsuarioAtual();
-
-    return fetchAllPrepared(
-        "
-        SELECT
-            ee.data_atualizacao AS data_entrega,
-            :usuario_nome AS usuario,
-            COALESCE(NULLIF(p.nome, ''), NULLIF({$estoqueNomeColumn}, ''), 'Item não informado') AS equipamento,
-            COALESCE(ee.quantidade, 0) AS quantidade,
-            'ESTOQUE' AS tipo
-        FROM estoque_equipamentos ee
-        LEFT JOIN produtos p ON p.id = ee.produto_id
-        {$whereSql}
-        ORDER BY ee.data_atualizacao DESC, ee.id DESC
-        LIMIT 5
-        ",
-        $params
-    );
 }
 
 function fetchDashboardPayload(array $filters, array $lojas, string $perfilColumn): array
@@ -1573,12 +1524,17 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             box-shadow: 0 0 0 3px rgba(39, 184, 77, .12);
         }
 
+        .logout-form { margin: 0; width: 100%; }
+
         .logout {
             display: inline-flex;
             align-items: center;
             justify-content: flex-start;
             gap: 10px;
             color: #fff;
+            background: transparent;
+            font: inherit;
+            cursor: pointer;
             font-weight: 700;
             min-height: 46px;
             width: 100%;
@@ -1784,6 +1740,38 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             box-shadow: inset 0 0 8px rgba(255, 255, 255, .08);
         }
 
+        .cube-face::before,
+        .cube-face::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            opacity: .82;
+            filter: drop-shadow(0 0 3px rgba(229, 9, 20, .9));
+        }
+
+        .cube-face::before {
+            background:
+                linear-gradient(90deg, transparent, #ff2632 46%, #fff 50%, #ff2632 54%, transparent) -55% 33% / 42% 2px no-repeat,
+                linear-gradient(90deg, transparent, #ff2632 46%, #fff 50%, #ff2632 54%, transparent) 155% 66% / 42% 2px no-repeat;
+            animation: cubeEnergyHorizontal 2.2s linear infinite;
+        }
+
+        .cube-face::after {
+            background:
+                linear-gradient(180deg, transparent, #ff2632 46%, #fff 50%, #ff2632 54%, transparent) 33% -55% / 2px 42% no-repeat,
+                linear-gradient(180deg, transparent, #ff2632 46%, #fff 50%, #ff2632 54%, transparent) 66% 155% / 2px 42% no-repeat;
+            animation: cubeEnergyVertical 2.2s linear infinite;
+        }
+
+        @keyframes cubeEnergyHorizontal {
+            to { background-position: 155% 33%, -55% 66%; }
+        }
+
+        @keyframes cubeEnergyVertical {
+            to { background-position: 33% 155%, 66% -55%; }
+        }
+
         .cube-face.front { transform: translateZ(17px); background-color: #737b88; }
         .cube-face.back { transform: rotateY(180deg) translateZ(17px); background-color: #555d69; }
         .cube-face.right { transform: rotateY(90deg) translateZ(17px); background-color: #626a76; }
@@ -1802,6 +1790,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 animation: none;
                 transform: rotateX(-18deg) rotateY(32deg);
             }
+            .cube-face::before,
+            .cube-face::after { animation: none; opacity: .28; }
         }
 
         .page-title h1 {
@@ -2427,7 +2417,15 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         .type-panel { grid-column: 2; grid-row: 1; min-height: 100%; }
         .movements-recent { grid-column: 1 / -1; grid-row: 2; }
         .top-products-panel { grid-column: 1; grid-row: 3; }
-        .activities-panel { grid-column: 2; grid-row: 3; }
+        .activities-panel {
+            grid-column: 2;
+            grid-row: 3;
+            transition: transform .2s ease, box-shadow .2s ease;
+        }
+        .activities-panel:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 14px 32px rgba(0, 0, 0, .22);
+        }
         .ops-center { grid-column: 1 / -1; grid-row: 4; order: 20; }
         @media (max-width: 1100px) {
             .chart-panel,
@@ -2571,11 +2569,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             color: #dce1ea;
         }
 
-        .chartjs-tooltip.tipo-tooltip {
-            max-width: 180px;
-            font-size: 12px;
-            line-height: 1.35;
-        }
 
         .legend {
             display: flex;
@@ -2716,15 +2709,68 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             border: 1px solid rgba(255, 255, 255, .07);
             border-radius: var(--radius);
             background: rgba(255, 255, 255, .02);
-            transition: border-color .2s ease, background .2s ease, transform .2s ease;
+            transition: border-color .2s ease, background .2s ease, transform .2s ease, box-shadow .2s ease;
         }
 
-        .type-row:hover {
-            border-color: rgba(255, 255, 255, .12);
-            background: rgba(255, 255, 255, .052);
-            transform: translateX(2px);
+        .type-row:hover,
+        .type-row.is-highlighted {
+            border-color: rgba(255, 255, 255, .16);
+            background: rgba(255, 255, 255, .065);
+            transform: translateY(-4px);
+            box-shadow: 0 9px 18px rgba(0, 0, 0, .2);
         }
 
+        .type-row.has-action {
+            grid-template-columns: 16px minmax(0, 1fr) auto;
+        }
+
+        .type-maintenance-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 30px;
+            padding: 0 9px;
+            border: 1px solid rgba(245, 179, 1, .28);
+            border-radius: 8px;
+            color: #ffd66b;
+            background: rgba(245, 179, 1, .08);
+            font-size: 10px;
+            font-weight: 800;
+            white-space: nowrap;
+            transition: transform .18s ease, background .18s ease, border-color .18s ease;
+        }
+
+        .type-maintenance-button:hover {
+            transform: translateY(-2px);
+            background: rgba(245, 179, 1, .14);
+            border-color: rgba(245, 179, 1, .5);
+        }
+
+        .type-percentage-indicator {
+            position: absolute;
+            z-index: 12;
+            pointer-events: none;
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(.94);
+            transition: opacity .2s ease, transform .2s ease;
+        }
+
+        .type-percentage-indicator.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .type-percentage-indicator strong {
+            display: block;
+            padding: 4px 7px;
+            border: 1px solid currentColor;
+            border-radius: 6px;
+            background: rgba(8, 12, 17, .92);
+            box-shadow: 0 5px 14px rgba(0, 0, 0, .24);
+            font-size: 11px;
+            line-height: 1;
+            white-space: nowrap;
+        }
 
         .top-product-qty {
             color: var(--muted);
@@ -2814,6 +2860,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
         }
 
         .type-panel .donut-wrap {
+            position: relative;
             flex: 1;
             display: grid;
             grid-template-columns: 180px minmax(0, 1fr);
@@ -2902,7 +2949,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .movements-recent .badge {
             min-width: 0;
-            max-width: calc(100% - 34px);
+            max-width: calc(100% - 46px);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -2912,6 +2959,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
 
         .movements-recent .reason-eye {
             flex: 0 0 24px;
+            margin-left: 12px;
         }
 
         .movements-recent td:nth-child(4) {
@@ -3640,7 +3688,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
     <div class="app">
         <aside class="sidebar">
             <button class="sidebar-toggle" type="button" aria-label="Recolher menu" title="Recolher menu">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m15 9-3 3 3 3"/></svg>
             </button>
             <div class="brand" aria-label="Bigmais">
                 <span>Big</span><span>mais</span><span class="plus">+</span><span class="brand-collapsed"><span>B</span><span>M</span></span>
@@ -3649,7 +3697,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             <nav class="nav" aria-label="Navegação principal">
                 <div class="nav-group">
                     <a class="nav-item active" href="dashboard.php" title="Painel de Controle">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/><path d="M9 20v-6h6v6"/></svg>
                         <span>Painel de Controle</span>
                     </a>
                 </div>
@@ -3685,10 +3733,13 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <span class="online-status"><i class="online-dot"></i>Online</span>
                     </div>
                 </div>
-                <a class="logout" href="../logout.php">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
-                    <span>Sair</span>
-                </a>
+                <form class="logout-form" method="post" action="../logout.php">
+                    <?php echo csrfInput(); ?>
+                    <button class="logout" type="submit">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+                        <span>Sair</span>
+                    </button>
+                </form>
             </div>
         </aside>
 
@@ -3870,7 +3921,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                                     <span class="status-with-reason">
                                                         <span class="badge <?php echo $statusOk ? 'ok' : 'wait'; ?>"><?php echo e($row['status']); ?></span>
                                                         <span class="reason-eye" tabindex="0" data-reason="<?php echo e($row['justificativa'] ?: 'Motivo nao informado.'); ?>" aria-label="Ver motivo">
-                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>
                                                         </span>
                                                     </span>
                                                 </td>
@@ -3901,6 +3952,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                 <h2>Movimentações por Tipo</h2>
                             </div>
                             <div class="donut-wrap">
+                                <div class="type-percentage-indicator" id="tipoPercentageIndicator" aria-hidden="true"><strong></strong></div>
                                 <div class="donut-canvas">
                                     <canvas id="tipoChart"></canvas>
                                     <div class="donut-center">
@@ -3908,9 +3960,9 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                     </div>
                                 </div>
                                 <div class="type-list">
-                                    <div class="type-row"><i class="dot green"></i><div><span>ENTREGAS</span><strong id="tipoEntregas"><?php echo (int) $entregasTipo; ?> registros • <?php echo e(number_format((float) $entregasPercent, 1, ',', '.')); ?>%</strong></div></div>
-                                    <div class="type-row"><i class="dot red"></i><div><span>TROCAS</span><strong id="tipoTrocas"><?php echo (int) $trocasTipo; ?> registros • <?php echo e(number_format((float) $trocasPercent, 1, ',', '.')); ?>%</strong></div></div>
-                                    <div class="type-row"><i class="dot yellow"></i><div><span>MANUTENÇÃO</span><strong id="tipoManutencoes"><?php echo (int) $manutencoesTipo; ?> registros • <?php echo e(number_format((float) $manutencoesPercent, 1, ',', '.')); ?>%</strong></div></div>
+                                    <div class="type-row" data-type-index="0"><i class="dot green"></i><div><span>ENTREGAS</span><strong id="tipoEntregas"><?php echo (int) $entregasTipo; ?> registros • <?php echo e(number_format((float) $entregasPercent, 1, ',', '.')); ?>%</strong></div></div>
+                                    <div class="type-row" data-type-index="1"><i class="dot red"></i><div><span>TROCAS</span><strong id="tipoTrocas"><?php echo (int) $trocasTipo; ?> registros • <?php echo e(number_format((float) $trocasPercent, 1, ',', '.')); ?>%</strong></div></div>
+                                    <div class="type-row has-action" data-type-index="2"><i class="dot yellow"></i><div><span>MANUTENÇÃO</span><strong id="tipoManutencoes"><?php echo (int) $manutencoesTipo; ?> registros • <?php echo e(number_format((float) $manutencoesPercent, 1, ',', '.')); ?>%</strong></div><a class="type-maintenance-button" href="manutencao.php?filtro=TODAS">Ver todas</a></div>
                                 </div>
                             </div>
                         </section>
@@ -3951,7 +4003,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                                         </span>
                                         <div>
                                             <?php $atividadeQuantidade = max(0, (int) ($atividade['quantidade'] ?? 0)); ?>
-                                            <p><?php echo e($atividade['usuario'] . ' adicionou ' . $atividadeQuantidade . ' ' . $atividade['equipamento'] . '.'); ?></p>
+                                            <?php $atividadeVerbo = ($atividade['movimento'] ?? 'adicionou') === 'retirou' ? 'retirou' : 'adicionou'; ?>
+                                            <p><?php echo e($atividade['usuario'] . ' ' . $atividadeVerbo . ' ' . $atividadeQuantidade . ' ' . $atividade['equipamento'] . '.'); ?></p>
                                             <?php $atividadeTs = strtotime((string) $atividade['data_entrega']); ?>
                                             <time><?php echo e(date('d/m/Y', $atividadeTs)); ?> <?php echo e(date('H:i', $atividadeTs)); ?></time>
                                         </div>
@@ -4000,8 +4053,8 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
     <script>
         const chartTextColor = '#dce1ea';
         const chartGridColor = 'rgba(255, 255, 255, .08)';
-        const initialDashboard = <?php echo json_encode($dashboardPayload, JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK); ?>;
-        const initialRecentes = <?php echo json_encode($recentesPage, JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK); ?>;
+        const initialDashboard = <?php echo json_encode($dashboardPayload, JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+        const initialRecentes = <?php echo json_encode($recentesPage, JSON_UNESCAPED_UNICODE | JSON_NUMERIC_CHECK | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
         const typeData = [<?php echo (int) $entregasTipo; ?>, <?php echo (int) $trocasTipo; ?>, <?php echo (int) $manutencoesTipo; ?>];
         const chartColors = ['#e50914', '#c90812', '#a10610', '#f03a43', '#7d0710', '#b70b16', '#d61f28', '#8f0911'];
         let selectedLojaIds = <?php echo json_encode(array_values($filters['loja_ids']), JSON_NUMERIC_CHECK); ?>;
@@ -4037,11 +4090,11 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             const rows = tooltip.body
                 .map((body, index) => {
                     const color = tooltip.labelColors[index]?.backgroundColor || '#fff';
-                    return `<span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${color};margin-right:6px;"></i>${body.lines[0]}</span>`;
+                    return `<span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(color)};margin-right:6px;"></i>${escapeHtml(body.lines[0])}</span>`;
                 })
                 .join('');
 
-            tooltipEl.innerHTML = `<strong>${title}</strong>${rows}`;
+            tooltipEl.innerHTML = `<strong>${escapeHtml(title)}</strong>${rows}`;
 
             const rect = chart.canvas.getBoundingClientRect();
             const panelRect = chart.canvas.closest('.panel')?.getBoundingClientRect() || rect;
@@ -4069,76 +4122,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             top = Math.min(maxTop, Math.max(minTop, top));
 
             tooltipEl.style.opacity = 1;
-            tooltipEl.style.left = `${left}px`;
-            tooltipEl.style.top = `${top}px`;
-        }
-
-        function externalTipoTooltip(context) {
-            const { chart, tooltip } = context;
-            let tooltipEl = document.getElementById('tipoChartTooltip');
-
-            if (!tooltipEl) {
-                tooltipEl = document.createElement('div');
-                tooltipEl.id = 'tipoChartTooltip';
-                tooltipEl.className = 'chartjs-tooltip tipo-tooltip';
-                document.body.appendChild(tooltipEl);
-            }
-
-            const globalTooltip = document.getElementById('chartjsTooltip');
-            if (globalTooltip) {
-                globalTooltip.style.opacity = 0;
-            }
-
-            if (tooltip.opacity === 0 || !tooltip.dataPoints?.length) {
-                tooltipEl.style.opacity = 0;
-                return;
-            }
-
-            const dataPoint = tooltip.dataPoints[0];
-            const color = tooltip.labelColors?.[0]?.backgroundColor || '#fff';
-            const value = Number(dataPoint.parsed || 0);
-            tooltipEl.innerHTML = `<strong>${dataPoint.label}</strong><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${color};margin-right:6px;"></i>${value} ${value === 1 ? 'registro' : 'registros'}</span>`;
-
-            const rect = chart.canvas.getBoundingClientRect();
-            const panelRect = chart.canvas.closest('.panel')?.getBoundingClientRect() || rect;
-            const wrapRect = chart.canvas.closest('.donut-wrap')?.getBoundingClientRect() || panelRect;
-            const typeListRect = chart.canvas.closest('.donut-wrap')?.querySelector('.type-list')?.getBoundingClientRect();
-            const arc = dataPoint.element;
-            const angle = typeof arc.startAngle === 'number' && typeof arc.endAngle === 'number'
-                ? (arc.startAngle + arc.endAngle) / 2
-                : Math.atan2(tooltip.caretY - (arc.y || rect.height / 2), tooltip.caretX - (arc.x || rect.width / 2));
-            const radius = Number(arc.outerRadius || Math.min(rect.width, rect.height) / 2);
-            const centerLeft = rect.left + Number(arc.x || rect.width / 2);
-            const centerTop = rect.top + Number(arc.y || rect.height / 2);
-            const directionX = Math.cos(angle) || 1;
-            const directionY = Math.sin(angle) || -0.35;
-            const gap = 12;
-            const anchorLeft = centerLeft + directionX * (radius + gap);
-            const anchorTop = centerTop + directionY * (radius + gap);
-
-            tooltipEl.style.opacity = 1;
-            tooltipEl.style.left = '-9999px';
-            tooltipEl.style.top = '-9999px';
-
-            const tooltipWidth = tooltipEl.offsetWidth || 150;
-            const tooltipHeight = tooltipEl.offsetHeight || 54;
-            const padding = 10;
-            const preferRight = directionX >= 0;
-            let left = preferRight ? anchorLeft + gap : anchorLeft - tooltipWidth - gap;
-            let top = anchorTop - tooltipHeight - 6;
-
-            if (preferRight && typeListRect && left + tooltipWidth > typeListRect.left - 8) {
-                left = typeListRect.left - tooltipWidth - 8;
-            }
-
-            const minLeft = Math.max(padding, panelRect.left + padding);
-            const maxLeft = Math.max(minLeft, Math.min(window.innerWidth - tooltipWidth - padding, panelRect.right - tooltipWidth - padding));
-            const minTop = Math.max(padding, wrapRect.top + padding);
-            const maxTop = Math.max(minTop, Math.min(window.innerHeight - tooltipHeight - padding, panelRect.bottom - tooltipHeight - padding));
-
-            left = Math.min(maxLeft, Math.max(minLeft, left));
-            top = Math.min(maxTop, Math.max(minTop, top));
-
             tooltipEl.style.left = `${left}px`;
             tooltipEl.style.top = `${top}px`;
         }
@@ -4448,12 +4431,79 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                 },
                 plugins: {
                     legend: { display: false },
-                    tooltip: {
-                        enabled: false,
-                        external: externalTipoTooltip
-                    }
+                    tooltip: { enabled: false }
                 }
             }
+        });
+
+        const typeRows = Array.from(document.querySelectorAll('.type-row[data-type-index]'));
+        const typeIndicator = document.getElementById('tipoPercentageIndicator');
+        const typeWrap = tipoCanvas.closest('.donut-wrap');
+        let rowHoverIndex = null;
+
+        function highlightTypeRow(index) {
+            typeRows.forEach((row) => row.classList.toggle('is-highlighted', Number(row.dataset.typeIndex) === index));
+        }
+
+        function hideTypePercentage() {
+            typeIndicator?.classList.remove('visible');
+            typeIndicator?.setAttribute('aria-hidden', 'true');
+        }
+
+        function showTypePercentage(index) {
+            if (!typeIndicator || !typeWrap) return;
+            const arc = tipoChart.getDatasetMeta(0).data[index];
+            const row = typeRows.find((item) => Number(item.dataset.typeIndex) === index);
+            if (!arc || !row) return;
+
+            const values = tipoChart.data.datasets[0].data.map(Number);
+            const total = values.reduce((sum, value) => sum + value, 0);
+            const percent = total > 0 ? (values[index] / total) * 100 : 0;
+            const angle = (arc.startAngle + arc.endAngle) / 2;
+            const canvasRect = tipoCanvas.getBoundingClientRect();
+            const wrapRect = typeWrap.getBoundingClientRect();
+            const startX = canvasRect.left - wrapRect.left + arc.x + Math.cos(angle) * (arc.outerRadius + 2);
+            const startY = canvasRect.top - wrapRect.top + arc.y + Math.sin(angle) * (arc.outerRadius + 2);
+            const color = tipoChart.data.datasets[0].backgroundColor[index];
+
+            typeIndicator.style.left = `${startX}px`;
+            typeIndicator.style.top = `${startY - 16}px`;
+            typeIndicator.style.color = color;
+            typeIndicator.querySelector('strong').textContent = `${percent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+            typeIndicator.classList.add('visible');
+            typeIndicator.setAttribute('aria-hidden', 'false');
+        }
+        function activateTypeFromCard(index) {
+            rowHoverIndex = index;
+            highlightTypeRow(index);
+            tipoChart.setActiveElements([{ datasetIndex: 0, index }]);
+            tipoChart.update('none');
+            requestAnimationFrame(() => showTypePercentage(index));
+        }
+
+        function clearTypeCardInteraction() {
+            rowHoverIndex = null;
+            hideTypePercentage();
+            tipoChart.setActiveElements([]);
+            tipoChart.update('none');
+            highlightTypeRow(null);
+        }
+
+        typeRows.forEach((row) => {
+            const index = Number(row.dataset.typeIndex);
+            row.addEventListener('mouseenter', () => activateTypeFromCard(index));
+            row.addEventListener('mouseleave', clearTypeCardInteraction);
+        });
+
+        tipoCanvas.addEventListener('mousemove', (event) => {
+            if (rowHoverIndex !== null) return;
+            const active = tipoChart.getElementsAtEventForMode(event, 'nearest', { intersect: true }, false);
+            highlightTypeRow(active.length ? active[0].index : null);
+            hideTypePercentage();
+        });
+        tipoCanvas.addEventListener('mouseleave', () => {
+            if (rowHoverIndex === null) highlightTypeRow(null);
+            hideTypePercentage();
         });
 
         function escapeHtml(value) {
@@ -4540,7 +4590,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                             <span class="status-with-reason">
                                 <span class="badge ${isOk ? 'ok' : 'wait'}">${escapeHtml(row.status)}</span>
                                 <span class="reason-eye" tabindex="0" data-reason="${escapeHtml(row.justificativa || 'Motivo nao informado.')}" aria-label="Ver motivo">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>
                                 </span>
                             </span>
                         </td>
@@ -4591,20 +4641,15 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             if (currentData[0] !== entregas || currentData[1] !== trocas || currentData[2] !== manutencoes) {
                 tipoChart.data.datasets[0].data = [entregas, trocas, manutencoes];
                 tipoChart.update();
+                if (rowHoverIndex !== null) requestAnimationFrame(() => showTypePercentage(rowHoverIndex));
             }
 
             document.getElementById('tipoTotal').textContent = total;
-            document.getElementById('tipoEntregas').textContent = `${entregas} registros ${formatPercent(entregasPercent)}%`;
+            document.getElementById('tipoEntregas').textContent = `${entregas} registros • ${formatPercent(entregasPercent)}%`;
             document.getElementById('tipoTrocas').textContent = `${trocas} registros • ${formatPercent(trocasPercent)}%`;
             document.getElementById('tipoManutencoes').textContent = `${manutencoes} registros • ${formatPercent(manutencoesPercent)}%`;
         }
 
-        async function loadTipo() {
-            const response = await fetch(`dashboard.php?ajax=tipo${filterQuery()}`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-            renderTipo(await response.json());
-        }
 
         function renderAtividades(rows) {
             const list = document.getElementById('atividadesList');
@@ -4632,13 +4677,34 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                     </span>
                     <div>
-                        <p>${escapeHtml(atividade.usuario || 'Administrador')} adicionou ${Number(atividade.quantidade || 0)} ${escapeHtml(atividade.equipamento || 'Item não informado')}.</p>
+                        <p>${escapeHtml(atividade.usuario || 'Administrador')} ${atividade.movimento === 'retirou' ? 'retirou' : 'adicionou'} ${Math.abs(Number(atividade.quantidade || 0))} ${escapeHtml(atividade.equipamento || 'Item não informado')}.</p>
                         <time>${formatShortDateTime(atividade.data_entrega)}</time>
                     </div>
                 </div>
             `).join('');
             refreshActivityRevealRows();
         }
+
+        let atividadesSignature = JSON.stringify(initialDashboard.atividades || []);
+
+        async function loadAtividades() {
+            try {
+                const response = await fetch('dashboard.php?ajax=atividades', {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    cache: 'no-store'
+                });
+                if (!response.ok) return;
+                const atividadesAtualizadas = await response.json();
+                const novaSignature = JSON.stringify(atividadesAtualizadas);
+                if (novaSignature === atividadesSignature) return;
+                atividadesSignature = novaSignature;
+                renderAtividades(atividadesAtualizadas);
+            } catch (error) {
+                console.error('Falha ao atualizar atividades de estoque:', error);
+            }
+        }
+
+        window.setInterval(loadAtividades, 15000);
 
         let atividadesInView = false;
 
@@ -4692,19 +4758,7 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
             observer.observe(target);
         }
 
-        async function loadAtividades() {
-            const response = await fetch(`dashboard.php?ajax=atividades${filterQuery()}`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-            renderAtividades(await response.json());
-        }
 
-        async function loadCards() {
-            const response = await fetch(`dashboard.php?ajax=cards${filterQuery()}`, {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-            renderCards(await response.json());
-        }
 
         function filterQuery() {
             const params = new URLSearchParams(new FormData(document.getElementById('dashboardFilters')));
@@ -4931,9 +4985,6 @@ $estoqueCriticoUrl = 'estoque.php?critico=1';
     </script>
 </body>
 </html>
-
-
-
 
 
 

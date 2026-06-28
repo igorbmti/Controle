@@ -7,6 +7,7 @@
 require_once 'includes/auth.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrfRequireValid();
     $usuario = trim($_POST['usuario'] ?? '');
     $senha = trim($_POST['senha'] ?? '');
 
@@ -18,6 +19,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $erro = authGetError();
     }
+}
+
+if (!isset($erro) && isset($_GET['timeout'])) {
+    $erro = 'Sua sess?o expirou por inatividade. Entre novamente.';
 }
 ?>
 <!DOCTYPE html>
@@ -38,10 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="subtitulo">Setor de Tecnologia da Informação</p>
 
             <?php if (isset($erro)): ?>
-                <div class="mensagem mensagem-erro"><?php echo htmlspecialchars($erro, ENT_QUOTES, 'UTF-8'); ?></div>
+                <div class="mensagem mensagem-erro"><?php echo htmlspecialchars($erro, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); ?></div>
             <?php endif; ?>
 
             <form method="POST" class="form" autocomplete="off">
+                <?php echo csrfInput(); ?>
                 <div class="grupo">
                     <label for="usuario">Usuário</label>
                     <input type="text" id="usuario" name="usuario" required autofocus>

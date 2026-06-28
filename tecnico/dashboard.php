@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/serial_control.php';
 
 verificarLogin('TECNICO');
 
@@ -16,7 +17,7 @@ if (empty($_SESSION['movimentacao_token'])) {
 
 function e(?string $value): string
 {
-    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
 function postValue(string $key, string $default = ''): string
@@ -121,16 +122,31 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'estoque') {
 
     $estoqueId = (int) ($_GET['id'] ?? 0);
     $stmt = $pdo->prepare('
-        SELECT quantidade
-        FROM estoque_equipamentos
-        WHERE id = :id
+        SELECT ee.quantidade, ee.produto_id, p.controla_serial
+        FROM estoque_equipamentos ee
+        INNER JOIN produtos p ON p.id = ee.produto_id
+        WHERE ee.id = :id
         LIMIT 1
     ');
     $stmt->execute([':id' => $estoqueId]);
-    $quantidade = $stmt->fetchColumn();
+    $estoqueAjax = $stmt->fetch();
+    $seriais = [];
+    if ($estoqueAjax && (bool) $estoqueAjax['controla_serial']) {
+        $stmtSeriais = $pdo->prepare("
+            SELECT id_serial, serial
+            FROM equipamento_seriais
+            WHERE id_equipamento = :produto_id
+              AND status = 'DISPONIVEL'
+            ORDER BY serial, id_serial
+        ");
+        $stmtSeriais->execute([':produto_id' => (int) $estoqueAjax['produto_id']]);
+        $seriais = $stmtSeriais->fetchAll();
+    }
 
     echo json_encode([
-        'quantidade' => $quantidade === false ? 0 : (int) $quantidade,
+        'quantidade' => $estoqueAjax ? (int) $estoqueAjax['quantidade'] : 0,
+        'controla_serial' => $estoqueAjax ? (bool) $estoqueAjax['controla_serial'] : false,
+        'seriais' => $seriais,
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -147,12 +163,17 @@ $equipamentos = fetchOptions($pdo, '
         ee.id,
         ee.produto_id,
         ee.quantidade,
+        p.controla_serial,
         p.nome AS equipamento
     FROM estoque_equipamentos ee
     INNER JOIN produtos p ON p.id = ee.produto_id
     WHERE COALESCE(p.ativo, 1) = 1
     ORDER BY p.nome
 ');
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    csrfRequireValid();
+}
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') === 'confirmar_movimentacao') {
     $sessionToken = (string) ($_SESSION['movimentacao_token'] ?? '');
@@ -163,6 +184,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
     $dataEntrega = postValue('data_entrega', date('Y-m-d'));
     $estoqueId = (int) ($_POST['estoque_id'] ?? 0);
     $quantidade = (int) ($_POST['quantidade'] ?? 1);
+    $idSerial = (int) ($_POST['id_serial'] ?? 0);
     $tipo = strtoupper(postValue('tipo'));
     $justificativa = postValue('justificativa');
 
@@ -209,6 +231,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
                     ee.id,
                     ee.produto_id,
                     ee.quantidade,
+                    p.controla_serial,
                     p.nome AS equipamento
                 FROM estoque_equipamentos ee
                 INNER JOIN produtos p ON p.id = ee.produto_id
@@ -226,7 +249,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
             }
 
             $produtoId = (int) $estoque['produto_id'];
-            $itemId = buscarOuCriarItemProduto($pdo, $produtoId, (string) $estoque['equipamento'], null, strtolower($tipo));
+            $controlaSerial = (bool) $estoque['controla_serial'];
+            $serialSelecionado = null;
+            if ($controlaSerial) {
+                if ($idSerial <= 0) {
+                    throw new RuntimeException('Selecione o serial do equipamento.');
+                }
+                if ($quantidade !== 1) {
+                    throw new RuntimeException('Equipamentos com serial devem ser movimentados uma unidade por vez.');
+                }
+                $serialSelecionado = serialControlBuscar($pdo, $idSerial, $produtoId, true);
+                serialControlValidarDisponivel($serialSelecionado);
+                $itemId = (int) ($serialSelecionado['id_item'] ?? 0);
+                if ($itemId <= 0) {
+                    $itemId = serialControlCriarItem($pdo, $produtoId, (string) $estoque['equipamento'], (string) $serialSelecionado['serial']);
+                    $stmtVincularItem = $pdo->prepare('UPDATE equipamento_seriais SET id_item = :id_item WHERE id_serial = :id_serial');
+                    $stmtVincularItem->execute([':id_item' => $itemId, ':id_serial' => $idSerial]);
+                }
+            } else {
+                $itemId = buscarOuCriarItemProduto($pdo, $produtoId, (string) $estoque['equipamento'], null, strtolower($tipo));
+            }
             $itemTrocaNovoId = null;
 
             if ($tipo === 'TROCA') {
@@ -256,12 +298,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
 
             $stmt = $pdo->prepare('
                 INSERT INTO movimentacoes (
-                    tipo, produto_id, item_id, loja_id, setor_id, funcionario_id,
+                    tipo, produto_id, item_id, id_serial, loja_id, setor_id, funcionario_id,
                     solicitante_nome, quantidade, status, justificativa, usuario_id,
                     descricao, data_movimentacao, data_conclusao
                 )
                 VALUES (
-                    :tipo, :produto_id, :item_id, :loja_id, :setor_id, :funcionario_id,
+                    :tipo, :produto_id, :item_id, :id_serial, :loja_id, :setor_id, :funcionario_id,
                     :solicitante_nome, :quantidade, :status, :justificativa, :usuario_id,
                     :descricao, NOW(), NOW()
                 )
@@ -270,6 +312,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
                 ':tipo' => $tipoFormatado,
                 ':produto_id' => $produtoId,
                 ':item_id' => $itemId,
+                ':id_serial' => $controlaSerial ? $idSerial : null,
                 ':loja_id' => $lojaId,
                 ':setor_id' => $setorId,
                 ':funcionario_id' => $funcionarioId,
@@ -280,6 +323,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
                 ':usuario_id' => $idUsuario,
                 ':descricao' => $descricao,
             ]);
+            $movimentacaoId = (int) $pdo->lastInsertId();
+
+            if ($controlaSerial) {
+                $stmtSerial = $pdo->prepare("
+                    UPDATE equipamento_seriais
+                    SET status = 'ENTREGUE',
+                        loja_atual = :loja_id,
+                        id_movimentacao_atual = :id_movimentacao
+                    WHERE id_serial = :id_serial
+                      AND status = 'DISPONIVEL'
+                ");
+                $stmtSerial->execute([
+                    ':loja_id' => $lojaId,
+                    ':id_movimentacao' => $movimentacaoId,
+                    ':id_serial' => $idSerial,
+                ]);
+                if ($stmtSerial->rowCount() !== 1) {
+                    throw new RuntimeException('O serial informado não está mais disponível no estoque.');
+                }
+                $stmtItem = $pdo->prepare("UPDATE itens SET status = 'Entregue' WHERE id = :id_item");
+                $stmtItem->execute([':id_item' => $itemId]);
+            }
 
             if ($tipo === 'TROCA') {
                 $stmt = $pdo->prepare('
@@ -322,7 +387,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['acao'] ?? '') =
                 $pdo->rollBack();
             }
             error_log('Erro ao registrar movimentação técnica: ' . $e->getMessage());
-            $erros[] = in_array($e->getMessage(), ['Quantidade indisponível em estoque.', 'Não foi possível criar o item operacional para este equipamento.'], true)
+            $erros[] = $e instanceof RuntimeException
                 ? $e->getMessage()
                 : 'Não foi possível concluir a operação. Tente novamente.';
         }
@@ -420,7 +485,7 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
         .profile strong { display: block; font-size: 12px; font-weight: 700; line-height: 1.2; }
         .profile span { display: inline-flex; align-items: center; gap: 6px; color: #dce1ea; font-size: 10.5px; margin-top: 2px; }
         .online-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(39, 184, 77, .12); }
-        .logout { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; width: 100%; padding: 0 12px; font-size: 14px; font-weight: 700; border: 1px solid transparent; border-radius: var(--radius); transition: background .2s ease, border-color .2s ease, transform .2s ease; }
+        .logout-form { margin: 0; width: 100%; } .logout { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; width: 100%; padding: 0 12px; color: #fff; background: transparent; font: inherit; font-size: 14px; font-weight: 700; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; transition: background .2s ease, border-color .2s ease, transform .2s ease; }
         .logout:hover { background: rgba(255, 255, 255, .045); border-color: rgba(255, 255, 255, .075); transform: translateY(-1px); }
         .topbar { height: 84px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; padding: 0 32px; background: rgba(5, 8, 12, .48); }
         .mobile-menu { color: #fff; font-size: 14px; font-weight: 800; }
@@ -603,10 +668,12 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
                 <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg></div>
                 <div><strong><?php echo e($nomeUsuario); ?></strong><span><i class="online-dot"></i>Online</span></div>
             </div>
-            <a class="logout" href="../logout.php">
+            <form class="logout-form" method="post" action="../logout.php">
+                <?php echo csrfInput(); ?><button class="logout" type="submit">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
                 Sair
-            </a>
+                </button>
+            </form>
         </div>
     </aside>
     <main class="main">
@@ -623,6 +690,7 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             </div>
 
             <form method="post" action="dashboard.php" id="formEntrega">
+                <?php echo csrfInput(); ?>
                 <input type="hidden" name="acao" value="confirmar_movimentacao">
                 <input type="hidden" name="movimentacao_token" value="<?php echo e((string) $_SESSION['movimentacao_token']); ?>">
                 <section class="panel">
@@ -656,9 +724,9 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
                         <div class="form-row equipment">
                             <label>Equipamento
                                 <select name="estoque_id" id="estoqueSelect" required>
-                                    <option value="" data-qtd="0">Selecione o equipamento</option>
+                                    <option value="" data-qtd="0" data-controla-serial="0">Selecione o equipamento</option>
                                     <?php foreach ($equipamentos as $item): ?>
-                                        <option value="<?php echo (int) $item['id']; ?>" data-qtd="<?php echo (int) $item['quantidade']; ?>" <?php echo $selectedEstoque === (int) $item['id'] ? 'selected' : ''; ?>>
+                                        <option value="<?php echo (int) $item['id']; ?>" data-qtd="<?php echo (int) $item['quantidade']; ?>" data-controla-serial="<?php echo (int) $item['controla_serial']; ?>" <?php echo $selectedEstoque === (int) $item['id'] ? 'selected' : ''; ?>>
                                             <?php echo e($item['equipamento']); ?>
                                         </option>
                                     <?php endforeach; ?>
@@ -689,6 +757,11 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
                                     <?php endfor; ?>
                                 </select>
                             </label>
+                            <label id="serialField" hidden>Serial
+                                <select name="id_serial" id="serialSelect">
+                                    <option value="">Selecione o serial</option>
+                                </select>
+                            </label>
                         </div>
                     </div>
                 </section>
@@ -715,6 +788,8 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
 <script>
     const estoqueSelect = document.getElementById('estoqueSelect');
     const quantidadeSelect = document.getElementById('quantidadeSelect');
+    const serialField = document.getElementById('serialField');
+    const serialSelect = document.getElementById('serialSelect');
     const stockNote = document.getElementById('stockNote');
     const justificativa = document.getElementById('justificativa');
     const contador = document.getElementById('contador');
@@ -737,6 +812,10 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
         aplicarQuantidadeDisponivel(Number(selected?.dataset.qtd || 0));
 
         if (!estoqueId) {
+            serialField.hidden = true;
+            serialSelect.required = false;
+            serialSelect.innerHTML = '<option value="">Selecione o serial</option>';
+            quantidadeSelect.disabled = false;
             return;
         }
 
@@ -748,6 +827,18 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
             const disponivel = Number(data.quantidade || 0);
             selected.dataset.qtd = disponivel;
             aplicarQuantidadeDisponivel(disponivel);
+            const controlsSerial = Boolean(data.controla_serial);
+            serialField.hidden = !controlsSerial;
+            serialSelect.required = controlsSerial;
+            quantidadeSelect.value = '1';
+            quantidadeSelect.disabled = controlsSerial;
+            serialSelect.innerHTML = '<option value="">Selecione o serial</option>';
+            (data.seriais || []).forEach((item) => {
+                const option = document.createElement('option');
+                option.value = item.id_serial;
+                option.textContent = item.serial;
+                serialSelect.appendChild(option);
+            });
         } catch (error) {
             aplicarQuantidadeDisponivel(Number(selected?.dataset.qtd || 0));
         }
@@ -764,6 +855,13 @@ $dataPadrao = $_POST['data_entrega'] ?? date('Y-m-d');
         const selected = estoqueSelect.options[estoqueSelect.selectedIndex];
         const disponivel = Number(selected?.dataset.qtd || 0);
         const quantidade = Number(quantidadeSelect.value || 0);
+        const controlsSerial = selected?.dataset.controlaSerial === '1';
+        quantidadeSelect.disabled = false;
+        if (controlsSerial && !serialSelect.value) {
+            event.preventDefault();
+            alert('Selecione o serial do equipamento.');
+            return;
+        }
         if (quantidade > disponivel) {
             event.preventDefault();
             alert('Quantidade indisponível em estoque.');

@@ -6,10 +6,100 @@
 declare(strict_types=1);
 
 if (session_status() === PHP_SESSION_NONE) {
+    $sessionSecure = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+        || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443;
+
+    ini_set('session.use_only_cookies', '1');
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_samesite', 'Lax');
+    ini_set('session.cookie_secure', $sessionSecure ? '1' : '0');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => $sessionSecure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
 
 require_once __DIR__ . '/../config/conexao.php';
+
+const AUTH_REGENERATE_INTERVAL = 900;
+
+function authDestroySession(): void
+{
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', [
+            'expires' => time() - 42000,
+            'path' => $params['path'],
+            'domain' => $params['domain'],
+            'secure' => (bool) $params['secure'],
+            'httponly' => (bool) $params['httponly'],
+            'samesite' => $params['samesite'] ?? 'Lax',
+        ]);
+    }
+
+    session_destroy();
+}
+
+function authTouchSession(): bool
+{
+    if (!usuarioLogado()) {
+        return true;
+    }
+
+    $now = time();
+    $lastRegeneration = (int) ($_SESSION['auth_last_regeneration'] ?? 0);
+    if ($lastRegeneration === 0 || ($now - $lastRegeneration) >= AUTH_REGENERATE_INTERVAL) {
+        session_regenerate_id(true);
+        $_SESSION['auth_last_regeneration'] = $now;
+    }
+
+    return true;
+}
+
+function csrfToken(): string
+{
+    if (empty($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+
+    return $_SESSION['csrf_token'];
+}
+
+function csrfInput(): string
+{
+    return '<input type="hidden" name="_csrf" value="'
+        . htmlspecialchars(csrfToken(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+        . '">';
+}
+
+function csrfRegenerate(): void
+{
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+function csrfIsValid(mixed $token): bool
+{
+    return is_string($token)
+        && $token !== ''
+        && isset($_SESSION['csrf_token'])
+        && is_string($_SESSION['csrf_token'])
+        && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+function csrfRequireValid(): void
+{
+    if (!csrfIsValid($_POST['_csrf'] ?? null)) {
+        http_response_code(403);
+        exit('N?o foi poss?vel validar esta solicita??o. Atualize a p?gina e tente novamente.');
+    }
+}
 
 function authColumnExists(PDO $pdo, string $column): bool
 {
@@ -132,10 +222,12 @@ function login(string $usuario, string $senha): string|false
     $perfil = normalizePerfil((string) $user['perfil']);
 
     session_regenerate_id(true);
+    csrfRegenerate();
 
     $_SESSION['id_usuario'] = (int) $user['id_usuario'];
     $_SESSION['nome'] = $user['nome'];
     $_SESSION['perfil'] = $perfil;
+    $_SESSION['auth_last_regeneration'] = time();
 
     if ($perfil === 'ADMIN') {
         return 'admin/dashboard.php';
@@ -158,7 +250,7 @@ function usuarioLogado(): bool
 
 function verificarLogin(?string $perfilObrigatorio = null): void
 {
-    if (!usuarioLogado()) {
+    if (!usuarioLogado() || !authTouchSession()) {
         header('Location: ../index.php');
         exit;
     }
@@ -171,8 +263,7 @@ function verificarLogin(?string $perfilObrigatorio = null): void
 
 function logout(): void
 {
-    session_unset();
-    session_destroy();
+    authDestroySession();
     header('Location: index.php');
     exit;
 }

@@ -1,0 +1,177 @@
+diff --git a/tecnico/dashboard.php b/tecnico/dashboard.php
+--- a/tecnico/dashboard.php
++++ b/tecnico/dashboard.php
+@@
+ require_once __DIR__ . '/../includes/auth.php';
++require_once __DIR__ . '/../includes/serial_control.php';
+@@
+-        SELECT quantidade
+-        FROM estoque_equipamentos
+-        WHERE id = :id
++        SELECT ee.quantidade, ee.produto_id, p.controla_serial
++        FROM estoque_equipamentos ee
++        INNER JOIN produtos p ON p.id = ee.produto_id
++        WHERE ee.id = :id
+         LIMIT 1
+     ');
+     $stmt->execute([':id' => $estoqueId]);
+-    $quantidade = $stmt->fetchColumn();
++    $estoqueAjax = $stmt->fetch();
++    $seriais = [];
++    if ($estoqueAjax && (bool) $estoqueAjax['controla_serial']) {
++        $stmtSeriais = $pdo->prepare("
++            SELECT id_serial, serial
++            FROM equipamento_seriais
++            WHERE id_equipamento = :produto_id
++              AND status = 'DISPONIVEL'
++            ORDER BY serial, id_serial
++        ");
++        $stmtSeriais->execute([':produto_id' => (int) $estoqueAjax['produto_id']]);
++        $seriais = $stmtSeriais->fetchAll();
++    }
+ 
+     echo json_encode([
+-        'quantidade' => $quantidade === false ? 0 : (int) $quantidade,
++        'quantidade' => $estoqueAjax ? (int) $estoqueAjax['quantidade'] : 0,
++        'controla_serial' => $estoqueAjax ? (bool) $estoqueAjax['controla_serial'] : false,
++        'seriais' => $seriais,
+     ], JSON_UNESCAPED_UNICODE);
+@@
+         ee.produto_id,
+         ee.quantidade,
++        p.controla_serial,
+         p.nome AS equipamento
+@@
+     $quantidade = (int) ($_POST['quantidade'] ?? 1);
++    $idSerial = (int) ($_POST['id_serial'] ?? 0);
+@@
+                     ee.produto_id,
+                     ee.quantidade,
++                    p.controla_serial,
+                     p.nome AS equipamento
+@@
+             $produtoId = (int) $estoque['produto_id'];
+-            $itemId = buscarOuCriarItemProduto($pdo, $produtoId, (string) $estoque['equipamento'], null, strtolower($tipo));
++            $controlaSerial = (bool) $estoque['controla_serial'];
++            $serialSelecionado = null;
++            if ($controlaSerial) {
++                if ($idSerial <= 0) {
++                    throw new RuntimeException('Selecione o serial do equipamento.');
++                }
++                if ($quantidade !== 1) {
++                    throw new RuntimeException('Equipamentos com serial devem ser movimentados uma unidade por vez.');
++                }
++                $serialSelecionado = serialControlBuscar($pdo, $idSerial, $produtoId, true);
++                serialControlValidarDisponivel($serialSelecionado);
++                $itemId = (int) ($serialSelecionado['id_item'] ?? 0);
++                if ($itemId <= 0) {
++                    $itemId = serialControlCriarItem($pdo, $produtoId, (string) $estoque['equipamento'], (string) $serialSelecionado['serial']);
++                    $stmtVincularItem = $pdo->prepare('UPDATE equipamento_seriais SET id_item = :id_item WHERE id_serial = :id_serial');
++                    $stmtVincularItem->execute([':id_item' => $itemId, ':id_serial' => $idSerial]);
++                }
++            } else {
++                $itemId = buscarOuCriarItemProduto($pdo, $produtoId, (string) $estoque['equipamento'], null, strtolower($tipo));
++            }
+             $itemTrocaNovoId = null;
+@@
+                 INSERT INTO movimentacoes (
+-                    tipo, produto_id, item_id, loja_id, setor_id, funcionario_id,
++                    tipo, produto_id, item_id, id_serial, loja_id, setor_id, funcionario_id,
+                     solicitante_nome, quantidade, status, justificativa, usuario_id,
+@@
+-                    :tipo, :produto_id, :item_id, :loja_id, :setor_id, :funcionario_id,
++                    :tipo, :produto_id, :item_id, :id_serial, :loja_id, :setor_id, :funcionario_id,
+@@
+                 ':produto_id' => $produtoId,
+                 ':item_id' => $itemId,
++                ':id_serial' => $controlaSerial ? $idSerial : null,
+@@
+                 ':descricao' => $descricao,
+             ]);
++            $movimentacaoId = (int) $pdo->lastInsertId();
++
++            if ($controlaSerial) {
++                $stmtSerial = $pdo->prepare("
++                    UPDATE equipamento_seriais
++                    SET status = 'ENTREGUE',
++                        loja_atual = :loja_id,
++                        id_movimentacao_atual = :id_movimentacao
++                    WHERE id_serial = :id_serial
++                      AND status = 'DISPONIVEL'
++                ");
++                $stmtSerial->execute([
++                    ':loja_id' => $lojaId,
++                    ':id_movimentacao' => $movimentacaoId,
++                    ':id_serial' => $idSerial,
++                ]);
++                if ($stmtSerial->rowCount() !== 1) {
++                    throw new RuntimeException('O serial informado não está mais disponível no estoque.');
++                }
++                $stmtItem = $pdo->prepare("UPDATE itens SET status = 'Entregue' WHERE id = :id_item");
++                $stmtItem->execute([':id_item' => $itemId]);
++            }
+@@
+-            $erros[] = in_array($e->getMessage(), ['Quantidade indisponível em estoque.', 'Não foi possível criar o item operacional para este equipamento.'], true)
+-                ? $e->getMessage()
+-                : 'Não foi possível concluir a operação. Tente novamente.';
++            $erros[] = $e instanceof RuntimeException
++                ? $e->getMessage()
++                : 'Não foi possível concluir a operação. Tente novamente.';
+@@
+-                                    <option value="" data-qtd="0">Selecione o equipamento</option>
++                                    <option value="" data-qtd="0" data-controla-serial="0">Selecione o equipamento</option>
+                                     <?php foreach ($equipamentos as $item): ?>
+-                                        <option value="<?php echo (int) $item['id']; ?>" data-qtd="<?php echo (int) $item['quantidade']; ?>" <?php echo $selectedEstoque === (int) $item['id'] ? 'selected' : ''; ?>>
++                                        <option value="<?php echo (int) $item['id']; ?>" data-qtd="<?php echo (int) $item['quantidade']; ?>" data-controla-serial="<?php echo (int) $item['controla_serial']; ?>" <?php echo $selectedEstoque === (int) $item['id'] ? 'selected' : ''; ?>>
+@@
+                         <div class="form-row quantity">
+                             <label class="quantity-field">Qtd.
+                                 <select name="quantidade" id="quantidadeSelect" required>
+                                     <?php for ($i = 1; $i <= 10; $i++): ?>
+                                         <option value="<?php echo $i; ?>" <?php echo (int) ($_POST['quantidade'] ?? 1) === $i ? 'selected' : ''; ?>><?php echo $i; ?></option>
+                                     <?php endfor; ?>
+                                 </select>
+                             </label>
++                            <label id="serialField" hidden>Serial
++                                <select name="id_serial" id="serialSelect">
++                                    <option value="">Selecione o serial</option>
++                                </select>
++                            </label>
+                         </div>
+@@
+     const quantidadeSelect = document.getElementById('quantidadeSelect');
++    const serialField = document.getElementById('serialField');
++    const serialSelect = document.getElementById('serialSelect');
+@@
+         if (!estoqueId) {
++            serialField.hidden = true;
++            serialSelect.required = false;
++            serialSelect.innerHTML = '<option value="">Selecione o serial</option>';
+             return;
+@@
+             selected.dataset.qtd = disponivel;
+             aplicarQuantidadeDisponivel(disponivel);
++            const controlsSerial = Boolean(data.controla_serial);
++            serialField.hidden = !controlsSerial;
++            serialSelect.required = controlsSerial;
++            quantidadeSelect.value = '1';
++            quantidadeSelect.disabled = controlsSerial;
++            serialSelect.innerHTML = '<option value="">Selecione o serial</option>';
++            (data.seriais || []).forEach((item) => {
++                const option = document.createElement('option');
++                option.value = item.id_serial;
++                option.textContent = item.serial;
++                serialSelect.appendChild(option);
++            });
+         } catch (error) {
+@@
+         const quantidade = Number(quantidadeSelect.value || 0);
++        const controlsSerial = selected?.dataset.controlaSerial === '1';
++        quantidadeSelect.disabled = false;
++        if (controlsSerial && !serialSelect.value) {
++            event.preventDefault();
++            alert('Selecione o serial do equipamento.');
++            return;
++        }
+         if (quantidade > disponivel) {
+*** End Patch

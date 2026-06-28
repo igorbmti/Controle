@@ -1,0 +1,95 @@
+diff --git a/admin/estoque.php b/admin/estoque.php
+--- a/admin/estoque.php
++++ b/admin/estoque.php
+@@
+     .stock-modal-body input { width: 100%; height: 40px; }
++    .stock-modal-body textarea {
++        width: 100%;
++        min-height: 110px;
++        padding: 10px 12px;
++        border: 1px solid var(--line);
++        border-radius: var(--radius);
++        background: #10151c;
++        color: #fff;
++        font: inherit;
++        resize: vertical;
++    }
++    .serial-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
++    .serial-choice label { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); }
++    .serial-choice input { width: auto; height: auto; }
++    .serial-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
++    .serial-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,.04); }
++    .serial-list small { color: var(--muted); }
++    .serial-details summary { cursor: pointer; list-style: none; }
++    .serial-details summary::-webkit-details-marker { display: none; }
++    .serial-details[open] summary { margin-bottom: 10px; }
+@@
+-    <label>Quantidade
+-        <input type="number" name="quantidade" min="0" required value="<?php echo e((string) ($editando['quantidade'] ?? 0)); ?>">
++    <label><?php echo !empty($editando['controla_serial']) ? 'Quantidade automática' : 'Quantidade'; ?>
++        <input type="number" name="quantidade" min="0" required value="<?php echo e((string) ($editando['quantidade'] ?? 0)); ?>" <?php echo !empty($editando['controla_serial']) ? 'readonly' : ''; ?>>
+@@
+-                            <td><?php echo e($row['serial'] ?: 'N/A'); ?></td>
++                            <td>
++                                <?php if (!empty($row['controla_serial'])): ?>
++                                    <details class="serial-details">
++                                        <summary class="btn">Ver Seriais</summary>
++                                        <ul class="serial-list">
++                                            <?php foreach ($seriaisPorProduto[(int) $row['produto_id']] ?? [] as $serial): ?>
++                                                <?php
++                                                $statusSerial = serialControlStatusLabel((string) $serial['status']);
++                                                $destinoSerial = $serial['loja'] !== '' && strtoupper((string) $serial['status']) !== 'DISPONIVEL'
++                                                    ? $serial['loja']
++                                                    : $statusSerial;
++                                                ?>
++                                                <li><strong><?php echo e($serial['serial']); ?></strong><small><?php echo e($destinoSerial); ?></small></li>
++                                            <?php endforeach; ?>
++                                        </ul>
++                                    </details>
++                                <?php else: ?>
++                                    N/A
++                                <?php endif; ?>
++                            </td>
+@@
+             <label>Nome do equipamento<input type="text" name="nome_equipamento" required autocomplete="off"></label>
+-            <label>Quantidade<input type="number" name="quantidade_equipamento" min="0" required value="1"></label>
+-            <label>Serial (opcional)<input type="text" name="serial_equipamento" placeholder="N/A" autocomplete="off"></label>
++            <div>
++                <span>Controla Serial?</span>
++                <div class="serial-choice">
++                    <label><input type="radio" name="controla_serial" value="1"> Sim</label>
++                    <label><input type="radio" name="controla_serial" value="0" checked> Não</label>
++                </div>
++            </div>
++            <label id="quantityEquipmentField">Quantidade<input type="number" name="quantidade_equipamento" min="0" required value="1"></label>
++            <label id="serialsEquipmentField" hidden>Seriais
++                <textarea name="seriais_equipamento" placeholder="Um serial por linha. Se ficar vazio, será gravado N/A."></textarea>
++                <small>A quantidade será calculada automaticamente pelos seriais cadastrados.</small>
++            </label>
+@@
+     const modal = document.getElementById('newEquipmentModal');
+     const openButton = document.getElementById('openNewEquipmentModal');
+     if (!modal || !openButton) return;
++    const quantityField = document.getElementById('quantityEquipmentField');
++    const serialsField = document.getElementById('serialsEquipmentField');
++    const quantityInput = quantityField?.querySelector('input');
++    const serialsInput = serialsField?.querySelector('textarea');
++    const updateSerialMode = () => {
++        const controlsSerial = modal.querySelector('input[name="controla_serial"]:checked')?.value === '1';
++        serialsField.hidden = !controlsSerial;
++        quantityInput.readOnly = controlsSerial;
++        if (controlsSerial) {
++            const informed = (serialsInput.value || '').split(/[\n,;]+/).map((value) => value.trim()).filter(Boolean);
++            quantityInput.value = Math.max(1, informed.length || 1);
++        }
++    };
+     const closeModal = () => { modal.classList.remove('open'); modal.setAttribute('aria-hidden', 'true'); openButton.focus(); };
+@@
+     modal.querySelectorAll('.js-close-equipment-modal').forEach((button) => button.addEventListener('click', closeModal));
++    modal.querySelectorAll('input[name="controla_serial"]').forEach((input) => input.addEventListener('change', updateSerialMode));
++    serialsInput?.addEventListener('input', updateSerialMode);
+     modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+@@
+     document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && modal.classList.contains('open')) closeModal(); });
++    updateSerialMode();
+*** End Patch

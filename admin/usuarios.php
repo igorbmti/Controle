@@ -54,6 +54,7 @@ function dataBr(?string $data): string
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    csrfRequireValid();
     try {
         $acaoPost = $_POST['acao'] ?? '';
 
@@ -389,6 +390,7 @@ if ($acao === 'novo' || $acao === 'editar'):
     ?>
     <section class="panel">
         <form method="post" action="usuarios.php">
+            <?php echo csrfInput(); ?>
             <input type="hidden" name="acao" value="salvar">
             <input type="hidden" name="id" value="<?php echo e((string) $form['id']); ?>">
             <div class="form-grid">
@@ -647,6 +649,7 @@ else:
                                     <a class="btn small" href="usuarios.php?acao=visualizar&id=<?php echo (int) $item['id']; ?>">Visualizar</a>
                                     <a class="btn small" href="usuarios.php?acao=editar&id=<?php echo (int) $item['id']; ?>">Editar</a>
                                     <form method="post" action="usuarios.php" onsubmit="return confirm('Deseja realmente excluir este usuário?');">
+                                        <?php echo csrfInput(); ?>
                                         <input type="hidden" name="acao" value="excluir">
                                         <input type="hidden" name="id" value="<?php echo (int) $item['id']; ?>">
                                         <button class="btn small danger" type="submit">Excluir</button>

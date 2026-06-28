@@ -5,7 +5,7 @@ verificarLogin('ADMIN');
 
 function e(?string $value): string
 {
-    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
 function adminIsFragmentRequest(): bool
@@ -25,7 +25,7 @@ function adminSidebar(): void
     $current = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
     $nomeUsuario = $_SESSION['nome_usuario'] ?? $_SESSION['usuario_nome'] ?? $_SESSION['usuario'] ?? 'Administrador';
     $icons = [
-        'dashboard' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+        'dashboard' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/><path d="M9 20v-6h6v6"/></svg>',
         'users' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>',
         'stock' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
         'maintenance' => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4"/><path d="m15 5 4 4"/></svg>',
@@ -35,7 +35,7 @@ function adminSidebar(): void
     ?>
     <aside class="sidebar">
         <button class="sidebar-toggle" type="button" aria-label="Recolher menu" title="Recolher menu">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m15 9-3 3 3 3"/></svg>
         </button>
         <div class="brand" aria-label="Bigmais"><span>Big</span><span>mais</span><span class="plus">+</span><span class="brand-collapsed"><span>B</span><span>M</span></span></div>
         <nav class="nav" aria-label="Navegação principal">
@@ -52,7 +52,9 @@ function adminSidebar(): void
         </nav>
         <div class="sidebar-footer">
             <div class="profile"><div class="avatar"><?php echo $icons['users']; ?></div><div><strong><?php echo e($nomeUsuario); ?></strong><span><i class="online-dot"></i>Online</span></div></div>
-            <a class="logout" href="../logout.php" title="Sair"><?php echo $icons['logout']; ?><span>Sair</span></a>
+            <form class="logout-form" method="post" action="../logout.php">
+                <?php echo csrfInput(); ?><button class="logout" type="submit" title="Sair"><?php echo $icons['logout']; ?><span>Sair</span></button>
+            </form>
         </div>
     </aside>
     <?php
@@ -90,7 +92,7 @@ function adminPageStart(string $title): void
             .nav-item{ min-height:50px; border-radius:var(--radius); color:#fff; display:flex; align-items:center; gap:12px; padding:0 14px; font-weight:700; border:1px solid transparent; transition:background .2s ease,border-color .2s ease,transform .2s ease,box-shadow .2s ease; }
             .nav-item svg,.logout svg{ width:21px; height:21px; flex:0 0 auto; } .nav-item:hover{ background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.075); transform:translateX(2px); } .nav-item.active{ background:linear-gradient(135deg,var(--red),#f01520); box-shadow:0 10px 24px rgba(229,9,20,.22); }
             .sidebar-footer{ margin-top:auto; border-top:1px solid var(--line); padding-top:18px; display:grid; gap:14px; } .profile{ display:flex; align-items:center; gap:9px; } .avatar{ width:32px; height:32px; border:1px solid rgba(255,255,255,.86); border-radius:50%; display:grid; place-items:center; } .avatar svg{ width:18px; height:18px; } .profile strong{ display:block; font-size:12px; } .profile span{ color:#dce1ea; display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; } .online-dot{ width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 3px rgba(39,184,77,.12); }
-            .logout{ display:inline-flex; align-items:center; justify-content:flex-start; gap:10px; color:#fff; font-weight:700; min-height:46px; width:100%; padding:0 12px; border:1px solid transparent; border-radius:var(--radius); transition:background .2s ease,border-color .2s ease,transform .2s ease; } .logout:hover{ background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.075); transform:translateY(-1px); }
+            .logout-form{ margin:0; width:100%; } .logout{ display:inline-flex; align-items:center; justify-content:flex-start; gap:10px; color:#fff; background:transparent; font:inherit; font-weight:700; min-height:46px; width:100%; padding:0 12px; border:1px solid transparent; border-radius:var(--radius); cursor:pointer; transition:background .2s ease,border-color .2s ease,transform .2s ease; } .logout:hover{ background:rgba(255,255,255,.045); border-color:rgba(255,255,255,.075); transform:translateY(-1px); }
             body.sidebar-collapsed{ --sidebar-width:92px; } body.sidebar-collapsed .sidebar{ align-items:center; padding-left:18px; padding-right:18px; } body.sidebar-collapsed .brand{ width:48px; height:48px; overflow:visible; justify-content:center; align-items:center; font-size:0; } body.sidebar-collapsed .brand>span:not(.brand-collapsed){ display:none; } body.sidebar-collapsed .brand .brand-collapsed{ display:inline-flex; width:32px; height:32px; margin:0; align-items:center; justify-content:center; gap:1px; font-family:"Segoe UI Variable","Segoe UI",Arial,sans-serif; font-size:21px; line-height:1; font-weight:800; letter-spacing:0; } body.sidebar-collapsed .brand .brand-collapsed span:first-child{ display:inline; color:#fff; } body.sidebar-collapsed .brand .brand-collapsed span:last-child{ display:inline; color:var(--red); } body.sidebar-collapsed .nav-label,body.sidebar-collapsed .nav-item span,body.sidebar-collapsed .profile>div,body.sidebar-collapsed .logout span{ display:none; } body.sidebar-collapsed .nav,body.sidebar-collapsed .nav-group,body.sidebar-collapsed .sidebar-footer{ width:100%; } body.sidebar-collapsed .nav-item,body.sidebar-collapsed .logout{ justify-content:center; padding:0; } body.sidebar-collapsed .profile{ justify-content:center; } body.sidebar-collapsed .sidebar-toggle{ align-self:center; } body.sidebar-collapsed .sidebar-toggle svg{ transform:rotate(180deg); }
             .main{ min-width:0; } .topbar{ height:84px; border-bottom:1px solid var(--line); display:flex; justify-content:flex-end; align-items:center; padding:0 32px; background:rgba(5,8,12,.48); } .page{ padding:32px; max-width:1440px; margin:0 auto; width:100%; opacity:1; transform:translateY(0); transition:opacity .18s ease, transform .18s ease; } .page.is-loading{ opacity:.35; transform:translateY(4px); }
             .top{ display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:24px; } .top h1{ margin:0 0 8px; font-size:30px; } .top p{ margin:0; color:var(--muted); }
